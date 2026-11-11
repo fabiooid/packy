@@ -38,7 +38,7 @@ function saveOrders(db: DatabaseSync, source: string, orders: SourceOrder[], now
     if (seen.has(order_id)) continue;
     if (findLivePack(db, source, order_id)) {
       db.prepare('UPDATE orders SET eligible = 0, ineligible_reason = ?, pulled_at = ? WHERE source = ? AND order_id = ?')
-        .run('No longer open at the source. It may be cancelled or already fulfilled.', now, source, order_id);
+        .run('Non più aperto alla fonte. Potrebbe essere annullato o già evaso.', now, source, order_id);
     } else {
       db.prepare('DELETE FROM orders WHERE source = ? AND order_id = ?').run(source, order_id);
     }

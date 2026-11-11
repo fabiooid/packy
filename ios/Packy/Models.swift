@@ -24,7 +24,7 @@ struct SourceState: Decodable, Identifiable {
         case "faire": "Faire"
         case "ankorstore": "Ankorstore"
         case "orderchamp": "OrderChamp"
-        case "fixture": "Fixture orders"
+        case "fixture": "Ordini di prova"
         default: name
         }
     }
@@ -146,7 +146,6 @@ struct Pack: Decodable {
     let limitsNote: String
     let hasRecordedCount: Bool
     let canLeave: Bool
-
     var canScan: Bool { status == "active" && isOwner && eligible && changes.isEmpty }
 }
 

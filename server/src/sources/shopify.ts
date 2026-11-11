@@ -70,24 +70,24 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
     } else if (item.currentQuantity > 0) {
       lines.push({
         ...base, required: item.currentQuantity, kind: 'uncertain',
-        kindReason: 'Shopify says this row needs no shipping, but that does not prove it is not a physical item.',
+        kindReason: 'Per Shopify questa riga non va spedita, ma non è detto che non sia un prodotto fisico.',
       });
     }
   }
 
-  const nonPhysical: NonPhysicalRow[] = node.shippingLines.nodes.map((s) => ({ title: s.title, reason: 'Shipping charge' }));
+  const nonPhysical: NonPhysicalRow[] = node.shippingLines.nodes.map((s) => ({ title: s.title, reason: 'Spedizione' }));
   const truncated = Boolean(
     node.lineItems.pageInfo?.hasNextPage || node.fulfillmentOrders.pageInfo?.hasNextPage ||
     node.fulfillmentOrders.nodes.some((fo) => fo.lineItems.pageInfo?.hasNextPage),
   );
 
   let ineligibleReason: string | null = null;
-  if (node.cancelledAt) ineligibleReason = 'Cancelled at the source.';
-  else if (node.closed) ineligibleReason = 'Closed at the source.';
-  else if (truncated) ineligibleReason = 'This order is too large to read completely, so it cannot be certified.';
-  else if (!ELIGIBLE_PAYMENT.has(node.displayFinancialStatus ?? '')) ineligibleReason = `Payment status is ${node.displayFinancialStatus ?? 'unknown'}.`;
-  else if (held) ineligibleReason = 'Fulfillment is on hold or scheduled at the source.';
-  else if (lines.length === 0) ineligibleReason = 'Nothing physical is left to send on this order.';
+  if (node.cancelledAt) ineligibleReason = 'Annullato alla fonte.';
+  else if (node.closed) ineligibleReason = 'Chiuso alla fonte.';
+  else if (truncated) ineligibleReason = 'Ordine troppo grande per essere letto per intero, quindi non si può certificare.';
+  else if (!ELIGIBLE_PAYMENT.has(node.displayFinancialStatus ?? '')) ineligibleReason = `Stato del pagamento: ${node.displayFinancialStatus ?? 'sconosciuto'}.`;
+  else if (held) ineligibleReason = 'Evasione sospesa o programmata alla fonte.';
+  else if (lines.length === 0) ineligibleReason = 'In questo ordine non resta nulla di fisico da spedire.';
 
   return {
     source: 'shopify', orderId: node.id, reference: node.name, recipient: node.shippingAddress?.name ?? null,

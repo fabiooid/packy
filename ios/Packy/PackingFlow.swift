@@ -3,24 +3,24 @@ import Foundation
 /// v1 packing userflow rules and the copy that those rules need.
 /// Layout and chrome stay in the existing screens.
 enum PackingFlow {
-    static let signInPurpose = "Check that the box matches the order, then mark it packed."
-    static let operatorField = "Operator"
-    static let operatorHint = "Your name."
-    static let sampleMode = "Sample orders for local testing. Not live customer data."
-    static let listHeading = "Orders"
-    static let listPurpose = "Start one order, finish it, then take the next."
-    static let startAction = "Pack"
-    static let leaveAction = "Leave without packing"
-    static let emptyOrders = "No orders to pack from the sources that answered."
-    static let sourceFailed = "Could not reach this source, so there may be orders you cannot see."
-    static let productListHint = "Scan each product. The list will track it."
-    static let cameraWaiting = "Point the camera at a barcode."
-    static let cameraSimulator = "This simulator has no camera. Choose a sample code, then confirm it the same way you would on a phone."
-    static let rightProduct = "Right product. Not counted yet."
-    static let countAction = "Count this bottle"
-    static let markDoneConfirm = "You are saying the box matches this order. This does not ship it."
-    static let typeNotBottle = "This code identifies the product type, not a single bottle."
-    static let wrongProductTitle = "Wrong product. Not counted."
+    static let signInPurpose = "Tutto il giorno a inscatolare"
+    static let operatorField = "Nome utente"
+    static let operatorHint = "es. ana"
+    static let sampleMode = "Ordini di prova per test locali. Non sono dati reali dei clienti."
+    static let listHeading = "Ordini"
+    static let listPurpose = "Inizia un ordine, finiscilo, poi passa al successivo."
+    static let startAction = "Imballa"
+    static let leaveAction = "Esci senza imballare"
+    static let emptyOrders = "Nessun ordine da imballare dalle fonti che hanno risposto."
+    static let sourceFailed = "Impossibile raggiungere una fonte: potrebbero esserci ordini che non vedi."
+    static let productListHint = "Scansiona ogni prodotto. L'elenco lo tiene in conto."
+    static let cameraWaiting = "Inquadra un codice a barre."
+    static let cameraSimulator = "Il simulatore non ha la fotocamera. Scegli un codice di prova, poi confermalo come faresti sul telefono."
+    static let rightProduct = "Prodotto giusto. Non ancora contato."
+    static let countAction = "Aggiungi"
+    static let markDoneConfirm = "Confermi che la scatola corrisponde all'ordine. Non lo spedisce."
+    static let typeNotBottle = "Questo codice identifica il tipo di prodotto, non il singolo pezzo."
+    static let wrongProductTitle = "Prodotto sbagliato. Non contato."
 
     static func countLabel(verified: Int, required: Int) -> String {
         "\(verified)/\(required)"
@@ -57,6 +57,6 @@ enum PackingFlow {
     }
 
     static func wrongProductMessage(stillNeeds: String) -> String {
-        "Wrong product. Not counted. This order still needs \(stillNeeds)."
+        "Prodotto sbagliato. Non contato. A questo ordine manca ancora \(stillNeeds)."
     }
 }

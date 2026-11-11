@@ -54,7 +54,7 @@ final class PackModel {
                 Feedback.rejected()
             }
         } catch {
-            handle(error, fallback: "This scan did not reach the server. Nothing was checked or recorded. Scan it again.")
+            handle(error, fallback: "Questa scansione non ha raggiunto il server. Non è stato controllato né registrato nulla. Scansiona di nuovo.")
         }
         busy = false
         if let next = queuedRead {
@@ -71,13 +71,13 @@ final class PackModel {
             pack = try await post("confirm", extra: ["scanId": scan.id], actionId: actionId)
             let counted = scan.unitNumber ?? 1
             let required = scan.required ?? counted
-            card = .recorded("Counted. \(PackingFlow.countLabel(verified: counted, required: required))")
+            card = .recorded("Contato. \(PackingFlow.countLabel(verified: counted, required: required))")
             Feedback.recorded()
         } catch APIFailure.unreachable {
             card = .unknownResult(scan: scan, actionId: actionId)
             Feedback.rejected()
         } catch {
-            handle(error, fallback: "Nothing was recorded.")
+            handle(error, fallback: "Non è stato registrato nulla.")
         }
     }
 
@@ -89,7 +89,7 @@ final class PackModel {
             pack = try await post(path, extra: extra)
             card = .idle
         } catch {
-            handle(error, fallback: "That did not reach the server. Nothing changed. Try again.")
+            handle(error, fallback: "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova.")
         }
     }
 
@@ -102,7 +102,7 @@ final class PackModel {
             didRelease = true
             return true
         } catch {
-            handle(error, fallback: "That did not reach the server. Nothing changed. Try again.")
+            handle(error, fallback: "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova.")
             return false
         }
     }
@@ -111,7 +111,7 @@ final class PackModel {
     func completeAfterRefresh() async {
         guard await refresh() else { return }
         guard pack.canComplete else {
-            card = .notRecorded("Not recorded. The latest check found something to resolve.")
+            card = .notRecorded("Non registrato. L'ultimo controllo ha trovato qualcosa da risolvere.")
             return
         }
         await perform("complete")
@@ -124,7 +124,7 @@ final class PackModel {
             pack = try await api.send("GET", "v1/packs/\(pack.id)")
             return true
         } catch {
-            handle(error, fallback: "Refresh failed. The data below is the last saved copy.")
+            handle(error, fallback: "Aggiornamento non riuscito. I dati mostrati sono l'ultima copia salvata.")
             return false
         }
     }

@@ -39,8 +39,8 @@ final class PackingFlowTests: XCTestCase {
     }
 
     func testEmptyListCopyDependsOnWhetherASourceFailed() {
-        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "No orders to pack from the sources that answered.")
-        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Could not reach this source, so there may be orders you cannot see.")
+        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da imballare dalle fonti che hanno risposto.")
+        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Impossibile raggiungere una fonte: potrebbero esserci ordini che non vedi.")
         let failed = SourceState(name: "fixture", status: "unavailable", errorCode: "fixture_unavailable", lastSuccessAt: nil)
         let catalog = SourceState(name: "fic", status: "unavailable", errorCode: "x", lastSuccessAt: nil)
         XCTAssertTrue(PackingFlow.orderSourceFailed([failed]))
@@ -50,16 +50,16 @@ final class PackingFlowTests: XCTestCase {
     func testWrongProductCopyNamesWhatTheOrderStillNeeds() {
         XCTAssertEqual(
             PackingFlow.wrongProductMessage(stillNeeds: "Cardamomo Sapone Mani 250ml (MS001)"),
-            "Wrong product. Not counted. This order still needs Cardamomo Sapone Mani 250ml (MS001)."
+            "Prodotto sbagliato. Non contato. A questo ordine manca ancora Cardamomo Sapone Mani 250ml (MS001)."
         )
     }
 
     func testLookalikeCodesStayDistinct() {
         XCTAssertNotEqual("MS001", "MS002")
-        XCTAssertEqual(PackingFlow.rightProduct, "Right product. Not counted yet.")
-        XCTAssertEqual(PackingFlow.countAction, "Count this bottle")
-        XCTAssertEqual(PackingFlow.markDoneConfirm, "You are saying the box matches this order. This does not ship it.")
-        XCTAssertEqual(PackingFlow.typeNotBottle, "This code identifies the product type, not a single bottle.")
+        XCTAssertEqual(PackingFlow.rightProduct, "Prodotto giusto. Non ancora contato.")
+        XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
+        XCTAssertEqual(PackingFlow.markDoneConfirm, "Confermi che la scatola corrisponde all'ordine. Non lo spedisce.")
+        XCTAssertEqual(PackingFlow.typeNotBottle, "Questo codice identifica il tipo di prodotto, non il singolo pezzo.")
     }
 
     private func order(id: String, reference: String, eligible: Bool, packStatus: String?, isOwner: Bool = false) -> WorkloadOrder {
