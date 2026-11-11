@@ -28,12 +28,17 @@ if (fixtures) {
   const shopify = shopDomain && hasShopifyCreds
     ? shopifySources({ shopDomain, accessToken: env.SHOPIFY_ADMIN_ACCESS_TOKEN || undefined, clientId: env.SHOPIFY_CLIENT_ID, clientSecret: env.SHOPIFY_CLIENT_SECRET })
     : null;
+  if (env.FATTURE_IN_CLOUD_API_KEY && !env.FIC_COMPANY_ID) {
+    throw new Error('FIC_COMPANY_ID is required when FATTURE_IN_CLOUD_API_KEY is set.');
+  }
   const artifact = JSON.parse(readFileSync(new URL('barcode-map.json', dataDir), 'utf8')) as { entries: BarcodeEntry[] };
   replaceFeed(db, 'marketplace_register', artifact.entries.filter((e) => e.provenance === 'marketplace_register'), Date.now());
   sources = {
     fixture: false,
     orders: shopify ? [shopify.orders] : [],
-    catalog: env.FATTURE_IN_CLOUD_API_KEY ? ficCatalog(env.FATTURE_IN_CLOUD_API_KEY, env.FIC_COMPANY_ID ?? '<company-id>') : null,
+    catalog: env.FATTURE_IN_CLOUD_API_KEY && env.FIC_COMPANY_ID
+      ? ficCatalog(env.FATTURE_IN_CLOUD_API_KEY, env.FIC_COMPANY_ID)
+      : null,
     barcodes: shopify ? [shopify.barcodes] : [],
     notConnected: [
       ...(shopify ? [] : [{ name: 'shopify', reason: 'No credentials provisioned.' }]),

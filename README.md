@@ -1,10 +1,10 @@
 # Packy
 
-Open-source iPhone packing check. It helps the person packing a parcel confirm the physical contents match the current order before recording it as packed. Connect it to your own order sources and product catalog; anyone can use it with their own orders. Packy never ships, fulfills, or writes to any source. It is released under the MIT license.
+Open-source iPhone packing check. It helps the person packing a parcel confirm the physical contents match the current order before recording it as packed. Packy is order-source agnostic: connect your own order sources and product catalog, and use it with your own orders. It never ships, fulfills, or writes to any source. It is released under the MIT license.
 
 - `ios/`: native SwiftUI app. Reads barcodes with the camera and shows what is verified, what remains, and why.
 - `server/`: thin Node service. Owns sign in, integration tokens, source adapters, and every packing rule.
-- `data/barcode-map.json`: barcode to FIC Codice map with provenance and coverage gaps.
+- `data/barcode-map.json`: barcode to product-code map with provenance and coverage gaps.
 - `data/policies.json`: products that stay blocked until a policy is approved.
 - `docs/HANDOFF.md`: implementation notes, status, and test evidence.
 
