@@ -16,9 +16,9 @@ struct ScannerPanel: View {
             content
             #endif
         }
-        .frame(height: 210)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
     @ViewBuilder private var content: some View {
@@ -52,13 +52,39 @@ struct ScannerPanel: View {
     }
 }
 
-private struct AimGuide: View {
+/// Corner brackets mark where reads count. Reads outside it are ignored.
+struct AimGuide: View {
+    var color: Color = .white
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .stroke(.white.opacity(0.8), lineWidth: 2)
-            .padding(.horizontal, 36)
-            .padding(.vertical, 44)
-            .allowsHitTesting(false)
+        GeometryReader { geo in
+            let w = min(geo.size.width - 72, 280)
+            let h = min(geo.size.height - 70, 130)
+            ZStack {
+                ForEach(0..<4, id: \.self) { corner in
+                    Bracket()
+                        .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .frame(width: 26, height: 26)
+                        .rotationEffect(.degrees(Double(corner) * 90))
+                        .offset(x: (corner == 0 || corner == 3 ? -1 : 1) * (w / 2 - 13),
+                                y: (corner < 2 ? -1 : 1) * (h / 2 - 13))
+                }
+                Capsule().fill(Theme.accent).frame(width: w - 36, height: 2)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct Bracket: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + 8))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + 8, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }
 
@@ -144,18 +170,26 @@ private struct SimulatedScanner: View {
     private let codes = [("MS001", "8050038450997"), ("MS002", "8050038450980"), ("MS024", "0806812399109"), ("MS040", "0806812399192"), ("Unknown", "0000000000000")]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(PackingFlow.cameraSimulator)
-                .font(.caption)
-                .foregroundStyle(.white)
-            ForEach(codes, id: \.1) { code in
-                Button(code.0) { onRead(code.1, "simulated") }
-                    .font(.subheadline.monospaced())
-                    .foregroundStyle(.white)
+        VStack(spacing: 10) {
+            AimGuide()
+            Text("Simulatore: nessuna fotocamera. Scegli una lettura di prova.")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white.opacity(0.85))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(codes, id: \.1) { code in
+                        Button(code.0) { onRead(code.1, "simulated") }
+                            .font(.footnote.monospaced().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 36)
+                            .background(.white.opacity(0.16), in: Capsule())
+                    }
+                }
+                .padding(.horizontal, 12)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(.vertical, 10)
     }
 }
 #endif

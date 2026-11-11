@@ -15,6 +15,7 @@ struct PackyApp: App {
                 }
             }
             .environment(model)
+            .preferredColorScheme(.light)
             .environment(\.locale, Locale(identifier: "it_IT"))
         }
         .onChange(of: scenePhase) { _, phase in
@@ -30,37 +31,79 @@ struct LoginView: View {
     @State private var working = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Spacer()
-            Text("Packy").font(.largeTitle.bold())
-            Text(PackingFlow.signInPurpose).foregroundStyle(.secondary)
-            Text(PackingFlow.operatorField).font(.subheadline)
-            TextField(PackingFlow.operatorHint, text: $username)
-                .textContentType(.name)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-            SecureField("Password", text: $password)
-                .textContentType(.oneTimeCode)
-                .textFieldStyle(.roundedBorder)
-            if let error = model.loginError {
-                Text(error).foregroundStyle(.red).font(.callout)
-            }
-            Button {
-                working = true
-                Task {
-                    await model.login(username: username, password: password)
-                    password = ""
-                    working = false
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Image("LoginMark")
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 96)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Packy").font(Theme.display(40)).foregroundStyle(Theme.cream)
+                        Text(PackingFlow.signInPurpose).font(.title3).foregroundStyle(Theme.cream.opacity(0.92))
+                    }
                 }
-            } label: {
-                Text(working ? "Accesso in corso..." : "Accedi").frame(maxWidth: .infinity).padding(.vertical, 6)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    field(PackingFlow.operatorField) {
+                        TextField(PackingFlow.operatorHint, text: $username)
+                            .textContentType(.name)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    field("Password") {
+                        SecureField("", text: $password).textContentType(.oneTimeCode)
+                    }
+                    if let error = model.loginError {
+                        Label(error, systemImage: "exclamationmark.circle.fill")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.danger)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    Button {
+                        working = true
+                        Task {
+                            await model.login(username: username, password: password)
+                            password = ""
+                            working = false
+                        }
+                    } label: {
+                        if working { ProgressView().tint(Theme.brandDeep) } else { Text("Accedi") }
+                    }
+                    .buttonStyle(PrimaryButtonStyle(color: Theme.cream, foreground: Theme.brandDeep))
+                    .disabled(working || username.isEmpty || password.isEmpty)
+                    .padding(.top, 6)
+                }
+
+                Text("Hai dimenticato l'accesso? Chiedi a chi gestisce Packy.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.cream.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 24)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(working || username.isEmpty || password.isEmpty)
-            Spacer()
-            Spacer()
+            .padding(.horizontal, 24)
+            .padding(.top, 56)
         }
-        .padding(24)
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(colors: [Theme.brand, Theme.brandDeep], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        )
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder input: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.cream)
+            input()
+                .font(.title3)
+                .foregroundStyle(Theme.ink)
+                .padding(.horizontal, 16)
+                .frame(height: 54)
+                .card(border: Theme.border, width: 1.5, radius: 14)
+        }
     }
 }
