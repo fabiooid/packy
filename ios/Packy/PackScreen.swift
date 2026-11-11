@@ -17,19 +17,13 @@ struct PackScreen: View {
             Group {
                 if pack.status == "completed" {
                     PackedView(model: model, onStartNext: onStartNext, onBack: { dismiss() })
-                } else if ownsActive && pack.canComplete && !sheetShown {
+                } else if ownsActive && pack.canComplete {
                     ReadyView(model: model)
                 } else {
                     packing
                 }
             }
-            if sheetShown {
-                Color.black.opacity(0.28).ignoresSafeArea().transition(.opacity)
-                ScanSheet(model: model)
-                    .transition(.move(edge: .bottom))
-            }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: sheetShown)
         .animation(.easeInOut(duration: 0.25), value: pack.status)
         .toolbar(.hidden, for: .navigationBar)
         .confirmationDialog("Cancellare i conteggi di \(pack.reference)?", isPresented: $confirmingRestart, titleVisibility: .visible) {
@@ -50,13 +44,6 @@ struct PackScreen: View {
             }
         } message: { _ in
             Text("Il conteggio viene tolto. Toglilo dalla scatola.")
-        }
-    }
-
-    private var sheetShown: Bool {
-        switch model.card {
-        case .offer, .rejected: true
-        default: false
         }
     }
 
@@ -140,24 +127,25 @@ struct PackScreen: View {
                 .padding(.horizontal, 12)
             }
             if pack.canScan, let line = selectedLine, PackingFlow.needsScan(line) {
-                VStack(spacing: 2) {
-                    Text("Scansiona").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                    Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
+                VStack(spacing: 14) {
+                    VStack(spacing: 2) {
+                        Text("Scansiona").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                        Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    }
+                    ScannerPanel { code, symbology in model.handleRead(code, symbology: symbology) }
+                        .frame(height: 200)
+                        .id(line.lineId)
+                    addUnitButton(enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: pendingScan)) {
+                        guard let scan = pendingScan else { return }
+                        Task { await model.confirm(scan) }
+                    }
                 }
-                ScannerPanel { code, symbology in model.handleRead(code, symbology: symbology) }
-                    .frame(height: 200)
-                    .id(line.lineId)
             } else if pack.canScan, let line = selectedLine {
                 VStack(spacing: 14) {
                     Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    Button {
+                    addUnitButton(enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: nil)) {
                         Task { await model.confirmManual(line) }
-                    } label: {
-                        Label(PackingFlow.countAction, systemImage: "plus")
                     }
-                    .buttonStyle(PrimaryButtonStyle(height: 54))
-                    .disabled(model.busy || !PackingFlow.canManualConfirm(line))
-                    .padding(.horizontal, 8)
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
             } else if pack.canScan {
@@ -192,6 +180,20 @@ struct PackScreen: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 36)
             .background(.white.opacity(0.14), in: Capsule())
+    }
+
+    private func addUnitButton(enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(PackingFlow.countAction, systemImage: "plus")
+        }
+        .buttonStyle(PrimaryButtonStyle(height: 54))
+        .disabled(model.busy || !enabled)
+        .padding(.horizontal, 8)
+    }
+
+    private var pendingScan: Scan? {
+        guard case .offer(let scan) = model.card else { return nil }
+        return scan
     }
 
     private var selectedLine: Line? {
@@ -287,7 +289,7 @@ private struct StatusCard: View {
 
     var body: some View {
         switch model.card {
-        case .idle, .offer, .rejected:
+        case .idle, .offer:
             EmptyView()
         case .checking(let code):
             HStack(spacing: 10) {
@@ -304,6 +306,13 @@ private struct StatusCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .card(border: Theme.success, width: 2)
+        case .rejected(let scan):
+            Label(scan.message, systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.danger)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 20))
         case .notRecorded(let message), .failure(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.subheadline.weight(.semibold))
@@ -390,120 +399,6 @@ struct LineCard: View {
         case "done": return Theme.success
         case "blocked", "recheck": return Theme.warning
         default: return Theme.border
-        }
-    }
-}
-
-// MARK: - Bottom sheet for a read
-
-private struct ScanSheet: View {
-    let model: PackModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Capsule().fill(Theme.track).frame(width: 40, height: 5).frame(maxWidth: .infinity)
-            switch model.card {
-            case .offer(let scan): offer(scan)
-            case .rejected(let scan): rejected(scan)
-            default: EmptyView()
-            }
-        }
-        .padding(.horizontal, 22)
-        .padding(.top, 12)
-        .padding(.bottom, 24)
-        .background(Theme.card, in: UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
-        .background(Theme.card.ignoresSafeArea(edges: .bottom))
-    }
-
-    @ViewBuilder private func offer(_ scan: Scan) -> some View {
-        let parts = PackingFlow.splitSize(scan.productName ?? "")
-        let line = model.pack.lines.first { $0.lineId == scan.lineId }
-        Label("\(PackingFlow.rightProduct)", systemImage: "barcode.viewfinder")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(Theme.accent)
-        VStack(alignment: .leading, spacing: 8) {
-            Text(parts.name.isEmpty ? (scan.codice ?? scan.barcode) : parts.name)
-                .font(Theme.display(32)).foregroundStyle(Theme.ink)
-            HStack(spacing: 10) {
-                if let size = parts.size {
-                    Text(size).font(.title2.weight(.bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(Theme.ink, in: RoundedRectangle(cornerRadius: 10))
-                }
-                if let code = scan.codice {
-                    Text(code).font(.system(size: 14, weight: .medium, design: .monospaced)).foregroundStyle(Theme.secondary)
-                }
-            }
-        }
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(scan.recheck ? "Controlla di nuovo" : "Sarebbe il").font(.footnote).foregroundStyle(Theme.secondary)
-                Spacer()
-                if let line { Text("\(line.verified) contati").font(.footnote).foregroundStyle(Theme.secondary) }
-            }
-            Text("\(scan.unitNumber ?? 1) di \(scan.required ?? 1)").font(Theme.display(28)).foregroundStyle(Theme.ink)
-            if let line { ProgressBar(done: line.verified, total: line.required, height: 6) }
-        }
-        .padding(16)
-        .background(Theme.ground, in: RoundedRectangle(cornerRadius: 18))
-        VStack(spacing: 8) {
-            Button {
-                Task { await model.confirm(scan) }
-            } label: {
-                Label(PackingFlow.countAction, systemImage: "plus")
-            }
-            .buttonStyle(PrimaryButtonStyle(height: 62))
-            .disabled(model.busy)
-            Button("Non ora") { model.card = .idle }
-                .buttonStyle(SecondaryButtonStyle(filled: false))
-            Text("Il codice indica il tipo di prodotto, non questo pezzo. Il tuo tocco conferma che ce n'è uno in più nella scatola.")
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
-    }
-
-    @ViewBuilder private func rejected(_ scan: Scan) -> some View {
-        HStack(spacing: 12) {
-            Circle().fill(Theme.dangerSoft).frame(width: 44, height: 44)
-                .overlay(Image(systemName: "xmark").font(.headline.weight(.bold)).foregroundStyle(Theme.danger))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title(scan)).font(Theme.display(24)).foregroundStyle(Theme.danger)
-                Text("Non contato nell'ordine").font(.subheadline).foregroundStyle(Theme.secondary)
-            }
-        }
-        if let code = scan.codice {
-            let scanned = PackingFlow.splitSize(scan.productName ?? "")
-            productBox("Hai scansionato", code, scanned.name, scanned.size, Theme.danger)
-        } else {
-            Text(scan.message).font(.subheadline).foregroundStyle(Theme.body)
-        }
-        Button("OK") { model.card = .idle }
-            .buttonStyle(PrimaryButtonStyle(color: Theme.ink))
-    }
-
-    private func productBox(_ label: String, _ code: String, _ name: String, _ size: String?, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label.uppercased()).font(.caption.weight(.semibold)).tracking(0.5).foregroundStyle(color)
-            Text(name.isEmpty ? code : name).font(Theme.display(24)).foregroundStyle(Theme.ink).lineLimit(2)
-            HStack(spacing: 10) {
-                if let size { SizeBadge(size: size, color: color) }
-                Text(code).font(.system(size: 13, weight: .medium, design: .monospaced)).foregroundStyle(Theme.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .card(border: color, width: 2, radius: 18)
-    }
-
-    private func title(_ scan: Scan) -> String {
-        switch scan.outcome {
-        case "wrong_product": "Prodotto sbagliato"
-        case "excess": "Già completo"
-        case "unknown_code": "Codice sconosciuto"
-        case "ambiguous_code": "Codice ambiguo"
-        default: "Non ancora verificabile"
         }
     }
 }
