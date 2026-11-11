@@ -581,3 +581,49 @@ describe('Shopify eligibility', () => {
     assert.equal(normalizeOrder(b).eligible, false);
   });
 });
+
+describe('web dashboard', () => {
+  test('the completed-orders feed needs a session and lists only packed orders, read-only', async () => {
+    assert.equal((await call(null, 'GET', '/v1/admin/completed')).status, 401);
+    assert.equal((await call('forged-token', 'GET', '/v1/admin/completed')).status, 401);
+
+    let p = await open(ana, 'f2');
+    p = await packUnits(ana, p, [MS002, MS040]);
+    clock += 60_000;
+    p = (await act(ana, p, 'complete')).json;
+    assert.equal(p.status, 'completed');
+    await open(ben, 'f1'); // in progress, must not appear
+
+    const before = JSON.stringify(db.prepare('SELECT * FROM packs ORDER BY id').all());
+    const res = await call(ben, 'GET', '/v1/admin/completed');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.fixture, true);
+    assert.equal(res.json.total, 1);
+    assert.equal(res.json.orders.length, 1);
+    const [o] = res.json.orders;
+    assert.equal(o.completedByName, 'Ana');
+    assert.equal(o.units, 2);
+    assert.equal(o.completedAt, clock);
+    assert.equal(o.recipient, 'Cliente di prova');
+    assert.equal(JSON.stringify(db.prepare('SELECT * FROM packs ORDER BY id').all()), before);
+    assert.ok(!JSON.stringify(res.json).includes('token'));
+
+    clock += 31 * 24 * 3_600_000;
+    const later = (await call(await signIn('ben'), 'GET', '/v1/admin/completed')).json;
+    assert.equal(later.orders.length, 0);
+    assert.equal(later.total, 1);
+  });
+  test('the page is public but carries no data and a strict CSP', async () => {
+    const page = await app.request('/admin');
+    assert.equal(page.status, 200);
+    const csp = page.headers.get('content-security-policy') ?? '';
+    assert.match(csp, /script-src 'self'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    const html = await page.text();
+    assert.doesNotMatch(html, /<script>/);
+    assert.doesNotMatch(html, /Cliente di prova/);
+    const js = await app.request('/admin/app.js');
+    assert.match(js.headers.get('content-type') ?? '', /javascript/);
+    assert.match(await js.text(), /textContent/);
+  });
+});

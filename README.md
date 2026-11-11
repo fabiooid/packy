@@ -64,6 +64,7 @@ The database path defaults to `/data/packy.db` in the image (`PACKY_DB`). Use re
 
 - **Barcode register:** export the marketplace EAN register as CSV with `sku` and `ean` columns, formatted as text, then run `npm run barcodes:import -- register.csv`. Open the file in a spreadsheet with care: spreadsheets drop leading zeroes. The importer refuses values in scientific notation.
 - **Sync:** data is pulled on sign in, app open, manual refresh, and the tap that completes an order. Nothing is scheduled.
+- **Dashboard:** open `/admin` on the server address, for example `https://your-packy-server/admin`, and sign in with the same operator account as the app. It is read-only and shows orders packed in the last 30 days: when, the customer, the reference, the number of pieces, and who packed it. The page itself holds no data until you sign in.
 - **Access:** every `/v1` route except login needs a server-side session. Sessions last 12 hours. Five failed logins lock an account for 15 minutes. To remove someone's access, set `active = 0` on their `users` row.
 - **Stored customer data:** order reference, recipient name, and line items. Logs hold error codes only, never order data or tokens.
 - **Retention:** `npm run purge -- 90` removes finished packing records older than 90 days and their recipient names. Run it by hand. The 90 day default is a proposal.
