@@ -7,6 +7,8 @@ import type { BarcodeEntry, CatalogProduct, SourceOrder, Sources } from '../type
 const physical = (lineId: string, sku: string | null, title: string, required: number) =>
   ({ lineId, sku, title, variantTitle: null, required, kind: 'physical' as const, kindReason: null });
 
+const shipping = (lineId: string, title: string) => ({ ...physical(lineId, null, title, 1), shipping: true });
+
 const order = (id: string, reference: string, partial: Partial<SourceOrder>): SourceOrder => ({
   source: 'fixture', orderId: id, reference, recipient: 'Cliente di prova',
   createdAt: '2026-11-07T09:00:00Z', sourceUpdatedAt: '2026-11-07T09:00:00Z',
@@ -16,10 +18,10 @@ const order = (id: string, reference: string, partial: Partial<SourceOrder>): So
 export function fixtureOrders(): SourceOrder[] {
   return [
     order('f1', '#FIX-1001', {
-      lines: [physical('f1-a', 'MS001', 'Sapone mani piccolo', 3), physical('f1-b', 'MS024', 'Candela', 1), physical('f1-ship', null, 'Express', 1)],
+      lines: [physical('f1-a', 'MS001', 'Sapone mani piccolo', 3), physical('f1-b', 'MS024', 'Candela', 1), shipping('f1-ship', 'Express')],
     }),
     order('f2', '#FIX-1002 free sample', {
-      lines: [physical('f2-a', 'MS002', 'Sapone mani grande', 1), physical('f2-b', 'MS040', 'SAMPLE gratis', 1), physical('f2-ship', null, 'Standard', 1)],
+      lines: [physical('f2-a', 'MS002', 'Sapone mani grande', 1), physical('f2-b', 'MS040', 'SAMPLE gratis', 1), shipping('f2-ship', 'Standard')],
     }),
     order('f3', '#FIX-1003 blank SKU', {
       lines: [

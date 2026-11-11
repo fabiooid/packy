@@ -192,7 +192,8 @@ describe('4. wrong product and excess', () => {
     assert.equal(s.json.scan.codice, 'MS002');
     assert.equal(s.json.scan.productName, 'Cardamomo Sapone Mani 500ml');
     assert.match(s.json.scan.message, /Prodotto sbagliato\. Non contato/);
-    assert.match(s.json.scan.message, /manca ancora Cardamomo Sapone Mani 250ml \(MS001\)/);
+    assert.match(s.json.scan.message, /Hai letto Cardamomo Sapone Mani 500ml \(MS002\)\.$/);
+    assert.doesNotMatch(s.json.scan.message, /MS001/, 'never suggests the right product');
     assert.equal(s.json.pack.lines[0].verified, 0);
     assert.equal(s.json.scan.id.length > 0, true);
     const offer = await confirm(ana, s.json.pack, s.json.scan.id);
@@ -226,7 +227,8 @@ describe('product-first scanning', () => {
     const p = await open(ana, 'f1');
     const other = await scanFor(ana, p, MS001, 'f1-b');
     assert.equal(other.json.scan.outcome, 'wrong_product');
-    assert.match(other.json.scan.message, /Stai scansionando Prodotto di prova MS024 \(MS024\)/);
+    assert.match(other.json.scan.message, /^Prodotto sbagliato\. Non contato\. Hai letto .*\(MS001\)\.$/);
+    assert.doesNotMatch(other.json.scan.message, /MS024/);
     assert.equal(other.json.pack.lines[0].verified, 0);
     const right = await scanFor(ana, p, MS024, 'f1-b');
     assert.equal(right.json.scan.outcome, 'eligible');
@@ -756,6 +758,25 @@ describe('manual confirm for barcodeless lines', () => {
     assert.equal(p.canComplete, false);
   });
 
+  test('shipping must be confirmed but is never counted as a piece', async () => {
+    const p = await open(ana, 'f1');
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-ship').isShipping, true);
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-a').isShipping, false);
+    const w = (await call(ana, 'GET', '/v1/workload')).json;
+    assert.equal(w.orders.find((o: any) => o.orderId === 'f1').units, 4);
+  });
+
+  test('the dashboard reports pieces confirmed by hand', async () => {
+    let p = await open(ana, 'f3');
+    p = await packUnit(ana, p, MS001);
+    p = await confirmManualLines(ana, p);
+    p = (await act(ana, p, 'complete')).json;
+    assert.equal(p.status, 'completed');
+    const [o] = (await call(ana, 'GET', '/v1/admin/completed')).json.orders;
+    assert.equal(o.units, 4);
+    assert.equal(o.manualUnits, 3);
+  });
+
   test('the order cannot be finished until barcodeless units are confirmed', async () => {
     let p = await open(ana, 'f3');
     p = await packUnit(ana, p, MS001);
@@ -816,7 +837,8 @@ describe('web dashboard', () => {
     assert.equal(res.json.orders.length, 1);
     const [o] = res.json.orders;
     assert.equal(o.completedByName, 'Ana');
-    assert.equal(o.units, 3);
+    assert.equal(o.units, 2, 'shipping is not a piece');
+    assert.equal(o.manualUnits, 0);
     assert.equal(o.completedAt, clock);
     assert.equal(o.recipient, 'Cliente di prova');
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM packs ORDER BY id').all()), before);

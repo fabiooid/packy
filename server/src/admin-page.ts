@@ -191,7 +191,7 @@ export const ADMIN_JS = `(() => {
       row.append(check);
       const mid = el('div');
       mid.append(el('div', 'who', o.recipient || 'Cliente senza nome'));
-      mid.append(el('div', 'ref', o.reference + ' · ' + o.units + (o.units === 1 ? ' pezzo' : ' pezzi')));
+      mid.append(el('div', 'ref', o.reference + ' · ' + o.units + (o.units === 1 ? ' pezzo' : ' pezzi') + (o.manualUnits ? ' · ' + o.manualUnits + ' a mano' : '')));
       row.append(mid);
       const right = el('div', 'right');
       right.append(el('span', 'status', 'Imballato alle ' + timeFmt.format(o.completedAt)));

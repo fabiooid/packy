@@ -94,14 +94,17 @@ struct PrimaryButtonStyle: ButtonStyle {
     var color: Color = Theme.accent
     var foreground: Color = .white
     var height: CGFloat = 56
+    /// On the night camera card a disabled button recedes into the dark instead of turning light gray.
+    var onDark = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(isEnabled ? foreground : Theme.secondary)
+            .foregroundStyle(isEnabled ? foreground : (onDark ? .white.opacity(0.45) : Theme.secondary))
             .frame(maxWidth: .infinity, minHeight: height)
-            .background(isEnabled ? color : Theme.track, in: RoundedRectangle(cornerRadius: 16))
+            .background(isEnabled ? color : (onDark ? .white.opacity(0.12) : Theme.track), in: RoundedRectangle(cornerRadius: 16))
+            .animation(.easeOut(duration: 0.2), value: isEnabled)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

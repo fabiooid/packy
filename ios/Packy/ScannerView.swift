@@ -175,6 +175,9 @@ private struct SimulatedScanner: View {
             Text("Simulatore: nessuna fotocamera. Scegli una lettura di prova.")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 14)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(codes, id: \.1) { code in

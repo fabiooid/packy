@@ -78,7 +78,7 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
   node.shippingLines.nodes.forEach((s, index) => {
     lines.push({
       lineId: `shipping:${index}:${s.title}`, sku: null, title: s.title, variantTitle: null,
-      required: 1, kind: 'physical', kindReason: null,
+      required: 1, kind: 'physical', kindReason: null, shipping: true,
     });
   });
   const nonPhysical: NonPhysicalRow[] = [];
