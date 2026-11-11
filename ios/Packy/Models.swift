@@ -144,6 +144,8 @@ struct Pack: Decodable {
     let completedByName: String?
     let changedAfterCompletion: Bool
     let limitsNote: String
+    let hasRecordedCount: Bool
+    let canLeave: Bool
 
     var canScan: Bool { status == "active" && isOwner && eligible && changes.isEmpty }
 }
@@ -159,6 +161,7 @@ struct Scan: Decodable {
     let required: Int?
     let recheck: Bool
     let discrepancyId: String?
+    let lineId: String?
 }
 
 struct ScanResponse: Decodable {

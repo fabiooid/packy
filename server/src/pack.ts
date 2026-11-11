@@ -16,7 +16,21 @@ export interface Ctx {
 export const ORDER_MAX_AGE_MS = 5 * 60_000;
 export const CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
 export const SCAN_OFFER_MS = 90_000;
-export const LIMITS_NOTE = 'Barcodes identify a product type, not an individual bottle. Each confirmation is your statement that one more unit went in the box.';
+export const LIMITS_NOTE = 'This code identifies the product type, not a single bottle.';
+
+function productLabel(codice: string | null | undefined, name: string | null | undefined, fallback = 'this product'): string {
+  if (codice && name) return `${name} (${codice})`;
+  if (name) return name;
+  if (codice) return codice;
+  return fallback;
+}
+
+function stillNeeded(view: PackView): string {
+  return view.lines
+    .filter((l) => l.remaining > 0 || l.uncertain > 0 || l.state === 'blocked')
+    .map((l) => productLabel(l.identity.codice, l.identity.ficName, l.identity.sourceTitle))
+    .join(', ');
+}
 
 const RESOLUTIONS: Record<string, string[]> = {
   wrong_product: ['set_aside', 'never_in_box'],
@@ -64,6 +78,7 @@ export interface PackView {
   discrepancies: { id: string; kind: string; barcode: string | null; codice: string | null; title: string; detail: string; readCount: number; resolutions: string[] }[];
   changes: Change[]; blockers: Blocker[]; canComplete: boolean;
   completedAt: number | null; completedByName: string | null; changedAfterCompletion: boolean; limitsNote: string;
+  hasRecordedCount: boolean; canLeave: boolean;
 }
 
 function getOrder(db: DatabaseSync, source: string, orderId: string): OrderRow {
@@ -178,15 +193,18 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   }
   for (const d of open) blockers.push({ code: 'discrepancy_open', message: d.title });
 
+  const hasRecordedCount = units.length > 0;
+  const isOwner = pack.owner_user_id === user.id;
   return {
     id: pack.id, source: pack.source, orderId: pack.order_id, reference: order.reference, recipient: order.recipient,
-    status: pack.status, version: pack.version, isOwner: pack.owner_user_id === user.id, ownerName: userName(db, pack.owner_user_id),
+    status: pack.status, version: pack.version, isOwner, ownerName: userName(db, pack.owner_user_id),
     fixture: ctx.sources.fixture, eligible: Boolean(order.eligible), ineligibleReason: order.ineligible_reason, freshness: fresh,
     lines, nonPhysical: JSON.parse(order.non_physical) as NonPhysicalRow[],
     discrepancies: open.map((d) => ({ id: d.id, kind: d.kind, barcode: d.barcode, codice: d.codice, title: d.title, detail: d.detail, readCount: d.read_count, resolutions: RESOLUTIONS[d.kind] ?? [] })),
-    changes, blockers, canComplete: blockers.length === 0 && pack.status === 'active' && pack.owner_user_id === user.id,
+    changes, blockers, canComplete: blockers.length === 0 && pack.status === 'active' && isOwner,
     completedAt: pack.completed_at, completedByName: pack.completed_by ? userName(db, pack.completed_by) : null,
     changedAfterCompletion: pack.status === 'completed' && (changes.length > 0 || !order.eligible), limitsNote: LIMITS_NOTE,
+    hasRecordedCount, canLeave: pack.status === 'active' && isOwner && !hasRecordedCount,
   };
 }
 
@@ -297,7 +315,7 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
     let recheck = false;
     let expiresAt: number | null = null;
 
-    const needed = view.lines.filter((l) => l.state !== 'done' && l.identity.codice).map((l) => l.identity.codice).join(', ') || 'nothing more';
+    const needed = stillNeeded(view);
     const lookup = lookupBarcode(ctx.db, barcode);
 
     if (lookup.status === 'unknown') {
@@ -316,8 +334,14 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
       const label = `${codice} ${name ?? '(not in FIC catalog)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
-        message = `${label} is not on this order. Still needed: ${needed}.`;
-        discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, codice, `Wrong product: ${label}`, 'This product is not on the order. Confirm where the physical item is.');
+        message = needed
+          ? `Wrong product. Not counted. This order still needs ${needed}.`
+          : `Wrong product. Not counted. ${productLabel(codice, name)} is not on this order.`;
+        discrepancyId = raiseDiscrepancy(
+          ctx, pack.id, outcome, barcode, codice,
+          `Wrong product: ${productLabel(codice, name)}`,
+          `${productLabel(codice, name)} is not on this order. It was not counted. Account for the physical item.`,
+        );
       } else if (matching.every((l) => l.state === 'blocked')) {
         outcome = 'line_blocked';
         message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'This line cannot be verified yet.';
@@ -332,8 +356,12 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
       } else {
         outcome = 'excess';
         const total = matching.reduce((sum, l) => sum + l.required, 0);
-        message = `${label}: all ${total} already counted. This read adds nothing.`;
-        discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, codice, `Extra read: ${label}`, `The order needs ${total}. Was this the same item read again, or is there an extra one?`);
+        message = `${productLabel(codice, name)}: extra item. The order needs ${total}. Not counted.`;
+        discrepancyId = raiseDiscrepancy(
+          ctx, pack.id, outcome, barcode, codice,
+          `Extra item: ${productLabel(codice, name)}`,
+          `${productLabel(codice, name)} is extra. The order needs ${total}. It was not counted. Account for the physical item.`,
+        );
       }
     }
 
@@ -491,6 +519,12 @@ export function release(ctx: Ctx, user: User, packId: string, actionId: string, 
     if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'This packing record is closed.');
     if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Only the current packer can empty this box.');
     if (pack.version !== version) throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.');
+    if (pack.status === 'active') {
+      const counted = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND status != 'removed' LIMIT 1`).get(pack.id);
+      if (counted) {
+        throw new ApiError(409, 'session_locked', 'This order already has a count. Stay on it until it is packed.', { pack: buildView(ctx, pack, user) });
+      }
+    }
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'box_emptied', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE packs SET status = 'released' WHERE id = ?`).run(pack.id);
