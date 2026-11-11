@@ -88,6 +88,9 @@ struct Line: Decodable, Identifiable {
     let verification: Verification?
     let units: [PackedUnit]
     let canManualConfirm: Bool
+    /// Shipping row: confirmed by hand (label on the box), never counted as a piece. Optional so older servers still decode.
+    let isShipping: Bool?
+    var shipping: Bool { isShipping ?? false }
     var id: String { lineId }
 }
 

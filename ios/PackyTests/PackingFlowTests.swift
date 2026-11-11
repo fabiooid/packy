@@ -111,15 +111,32 @@ final class PackingFlowTests: XCTestCase {
         )
     }
 
-    private func line(id: String = "x", method: String, canManualConfirm: Bool) -> Line {
+    func testShippingIsConfirmedButNeverAPiece() {
+        let soap = line(id: "a", method: "barcode", canManualConfirm: false, required: 3, verified: 2)
+        let ship = line(id: "s", method: "manual", canManualConfirm: true, verified: 1, shipping: true)
+        let pieces = PackingFlow.pieces([soap, ship])
+        XCTAssertEqual(pieces.total, 3)
+        XCTAssertEqual(pieces.counted, 2)
+    }
+
+    func testWrongReadNamesOnlyWhatWasRead() {
+        let scan = Scan(id: "s", outcome: "wrong_product", barcode: "8050038450980", codice: "MS002", productName: "Sapone 500ml",
+                        message: "", unitNumber: nil, required: nil, recheck: false, discrepancyId: nil, lineId: nil)
+        XCTAssertEqual(PackingFlow.wrongReadDetail(scan: scan), "Hai letto Sapone 500ml (MS002).")
+        let unnamed = Scan(id: "s", outcome: "wrong_product", barcode: "123", codice: nil, productName: nil,
+                           message: "", unitNumber: nil, required: nil, recheck: false, discrepancyId: nil, lineId: nil)
+        XCTAssertEqual(PackingFlow.wrongReadDetail(scan: unnamed), "Hai letto 123.")
+    }
+
+    private func line(id: String = "x", method: String, canManualConfirm: Bool, required: Int = 1, verified: Int = 0, shipping: Bool = false) -> Line {
         Line(
             lineId: id,
             kind: "physical",
             kindReason: nil,
-            required: 1,
-            verified: 0,
+            required: required,
+            verified: verified,
             uncertain: 0,
-            remaining: 1,
+            remaining: max(0, required - verified),
             state: "todo",
             identity: Identity(
                 status: method == "barcode" ? "resolved" : "unresolved",
@@ -130,7 +147,8 @@ final class PackingFlowTests: XCTestCase {
             ),
             verification: Verification(method: method, reason: nil),
             units: [],
-            canManualConfirm: canManualConfirm
+            canManualConfirm: canManualConfirm,
+            isShipping: shipping
         )
     }
 

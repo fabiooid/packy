@@ -62,7 +62,6 @@ struct PackScreen: View {
                     if pack.fixture { FixtureBanner() }
                     notices
                     StatusCard(model: model)
-                    progress
                     changes
                     openProblems
                     VStack(spacing: 10) {
@@ -85,12 +84,30 @@ struct PackScreen: View {
                 .padding(.vertical, 16)
             }
             .refreshable { await model.refresh() }
-            if ownsActive { footer }
+            footer
         }
+        .animation(.snappy(duration: 0.25), value: model.selectedLineId)
     }
 
     /// Navigation lives on the light background, outside the camera card.
     private var topBar: some View {
+        ZStack {
+            VStack(spacing: 1) {
+                Text(pack.recipient ?? pack.reference).font(Theme.display(17, .semibold)).foregroundStyle(Theme.ink)
+                if pack.recipient != nil {
+                    Text(pack.reference).font(.caption).foregroundStyle(Theme.secondary)
+                }
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 96)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            topBarButtons
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var topBarButtons: some View {
         HStack {
             Button { dismiss() } label: {
                 Label("Ordini", systemImage: "chevron.left")
@@ -111,43 +128,30 @@ struct PackScreen: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
     }
 
     private var cameraHeader: some View {
         VStack(spacing: 12) {
-            ZStack {
-                VStack(spacing: 2) {
-                    Text(pack.recipient ?? pack.reference).font(Theme.display(18, .semibold)).foregroundStyle(.white)
-                    if pack.recipient != nil {
-                        Text(pack.reference).font(.caption).foregroundStyle(.white.opacity(0.7))
-                    }
-                }
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-            }
             if pack.canScan, let line = selectedLine, PackingFlow.needsScan(line) {
-                VStack(spacing: 14) {
-                    VStack(spacing: 2) {
-                        Text("Scansiona").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                        Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    }
+                countCard(line, enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: pendingScan)) {
                     ScannerPanel { code, symbology in model.handleRead(code, symbology: symbology) }
-                        .frame(height: 200)
                         .id(line.lineId)
-                    addUnitButton(enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: pendingScan)) {
-                        guard let scan = pendingScan else { return }
-                        Task { await model.confirm(scan) }
-                    }
+                } action: {
+                    guard let scan = pendingScan else { return }
+                    Task { await model.confirm(scan) }
                 }
             } else if pack.canScan, let line = selectedLine {
-                VStack(spacing: 14) {
-                    Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    addUnitButton(enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: nil)) {
-                        Task { await model.confirmManual(line) }
+                countCard(line, enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: nil)) {
+                    VStack(spacing: 10) {
+                        Image(systemName: line.shipping ? "shippingbox" : "eye").font(.system(size: 30, weight: .medium))
+                        Text(line.shipping ? "Metti l'etichetta giusta" : "Senza codice: controlla a vista").font(.headline)
                     }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black, in: RoundedRectangle(cornerRadius: 18))
+                } action: {
+                    Task { await model.confirmManual(line) }
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
             } else if pack.canScan {
                 VStack(spacing: 10) {
                     Image(systemName: "hand.tap").font(.system(size: 30, weight: .medium))
@@ -171,6 +175,29 @@ struct PackScreen: View {
         .padding(.top, 4)
     }
 
+    /// One layout for every count, scanned or by hand: the product, a panel, then Aggiungi.
+    /// The frame and the button turn green together when the count is ready to add.
+    private func countCard<Panel: View>(_ line: Line, enabled: Bool, @ViewBuilder panel: () -> Panel, action: @escaping () -> Void) -> some View {
+        let rejected: Bool = { if case .rejected = model.card { return true } else { return false } }()
+        let frame: Color? = rejected ? Theme.danger : (enabled ? Theme.success : nil)
+        return VStack(spacing: 14) {
+            Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
+            panel()
+                .frame(height: 200)
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(frame ?? .clear, lineWidth: 3))
+                .animation(.easeOut(duration: 0.2), value: frame)
+            if case .rejected(let scan) = model.card {
+                wrongRead(scan)
+            }
+            Button(action: action) {
+                Label(PackingFlow.countAction, systemImage: "plus")
+            }
+            .buttonStyle(PrimaryButtonStyle(color: Theme.success, height: 54, onDark: true))
+            .disabled(model.busy || !enabled)
+            .padding(.horizontal, 8)
+        }
+    }
+
     private func headerButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
             .font(.subheadline.weight(.semibold))
@@ -182,13 +209,21 @@ struct PackScreen: View {
             .background(.white.opacity(0.14), in: Capsule())
     }
 
-    private func addUnitButton(enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(PackingFlow.countAction, systemImage: "plus")
+    private func wrongRead(_ scan: Scan) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(scan.outcome == "wrong_product" ? "Prodotto sbagliato. Non contato." : "Non contato.", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+            Text(scan.outcome == "wrong_product" ? PackingFlow.wrongReadDetail(scan: scan) : scan.message)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(PrimaryButtonStyle(height: 54))
-        .disabled(model.busy || !enabled)
+        .foregroundStyle(Theme.danger)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 8)
+        .accessibilityElement(children: .combine)
     }
 
     private var pendingScan: Scan? {
@@ -229,17 +264,25 @@ struct PackScreen: View {
         }
     }
 
-    private var totalUnits: Int { pack.lines.reduce(0) { $0 + $1.required } }
-    private var countedUnits: Int { pack.lines.reduce(0) { $0 + $1.verified } }
+    private var totalUnits: Int { PackingFlow.pieces(pack.lines).total }
+    private var countedUnits: Int { PackingFlow.pieces(pack.lines).counted }
 
-    private var progress: some View {
-        VStack(spacing: 10) {
+    /// The order count stays pinned under the list, so it is in view while scrolling products.
+    private var footer: some View {
+        VStack(spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("\(countedUnits) di \(totalUnits) nella scatola").font(Theme.display(26)).foregroundStyle(Theme.ink)
+                Text("\(countedUnits) di \(totalUnits)").font(Theme.display(24)).foregroundStyle(Theme.ink)
+                Text("nella scatola").font(.subheadline.weight(.medium)).foregroundStyle(Theme.secondary)
                 Spacer()
             }
             ProgressBar(done: countedUnits, total: totalUnits)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(Theme.ground.overlay(alignment: .top) { Divider().overlay(Theme.border) })
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(countedUnits) di \(totalUnits) nella scatola")
     }
 
     @ViewBuilder private var changes: some View {
@@ -271,15 +314,6 @@ struct PackScreen: View {
         }
     }
 
-    private var footer: some View {
-        Button("Non ancora pronto") {}
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(true)
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-            .background(Theme.ground.overlay(alignment: .top) { Divider().overlay(Theme.border) })
-    }
 }
 
 // MARK: - Inline status
@@ -289,7 +323,7 @@ private struct StatusCard: View {
 
     var body: some View {
         switch model.card {
-        case .idle, .offer:
+        case .idle, .offer, .rejected:
             EmptyView()
         case .checking(let code):
             HStack(spacing: 10) {
@@ -306,13 +340,6 @@ private struct StatusCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
                 .card(border: Theme.success, width: 2)
-        case .rejected(let scan):
-            Label(scan.message, systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.danger)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 20))
         case .notRecorded(let message), .failure(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.subheadline.weight(.semibold))
@@ -352,6 +379,11 @@ struct LineCard: View {
                     if let size = parts.size { SizeBadge(size: size, strong: highlighted || line.state != "done") }
                     if let codice = line.identity.codice {
                         Text(codice).font(.system(size: 13, weight: .medium, design: .monospaced)).foregroundStyle(Theme.secondary)
+                    }
+                    if line.shipping {
+                        Chip(text: "Spedizione · non è un pezzo", foreground: Theme.secondary, background: Theme.divider)
+                    } else if line.verification?.method == "manual" {
+                        Chip(text: "Senza codice · conferma a mano", foreground: Theme.warning, background: Theme.warningSoft)
                     }
                 }
             }
@@ -448,7 +480,7 @@ private struct ReadyView: View {
     let model: PackModel
 
     private var pack: Pack { model.pack }
-    private var total: Int { pack.lines.reduce(0) { $0 + $1.required } }
+    private var total: Int { PackingFlow.pieces(pack.lines).total }
 
     var body: some View {
         ScrollView {
@@ -559,7 +591,7 @@ private struct PackedView: View {
     @Environment(AppModel.self) private var app
 
     private var pack: Pack { model.pack }
-    private var units: Int { pack.lines.reduce(0) { $0 + $1.verified } }
+    private var units: Int { PackingFlow.pieces(pack.lines).counted }
 
     private var next: WorkloadOrder? {
         PackingFlow.packableOrders(app.workload?.orders ?? [])
@@ -573,7 +605,9 @@ private struct PackedView: View {
                 .overlay(Image(systemName: "checkmark").font(.system(size: 44, weight: .bold)).foregroundStyle(.white))
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
-                Text("Imballato").font(Theme.display(34)).foregroundStyle(Theme.ink)
+                // The one celebratory moment in the flow. VoiceOver reads the word only.
+                Text("Imballato 🎉").font(Theme.display(34)).foregroundStyle(Theme.ink)
+                    .accessibilityLabel("Imballato")
                 Text(pack.recipient ?? pack.reference).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
                 Text("\(pack.reference) · \(units) \(PackingFlow.unitWord(units))").font(.subheadline).foregroundStyle(Theme.secondary)
             }

@@ -9,6 +9,8 @@ export interface SourceLine {
   required: number;
   kind: LineKind;
   kindReason: string | null;
+  /** A shipping method row. It is confirmed by hand (label on the box) but is not a piece in the box. */
+  shipping?: boolean;
 }
 
 export interface NonPhysicalRow {
