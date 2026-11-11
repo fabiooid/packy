@@ -15,7 +15,8 @@ struct PackyApp: App {
                 }
             }
             .environment(model)
-            .preferredColorScheme(.light)
+            // Login sits on deep blue, so it needs light status-bar text. Everything else is light.
+            .preferredColorScheme(model.signedIn ? .light : .dark)
             .environment(\.locale, Locale(identifier: "it_IT"))
         }
         .onChange(of: scenePhase) { _, phase in
@@ -48,7 +49,7 @@ struct LoginView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     field(PackingFlow.operatorField) {
-                        TextField(PackingFlow.operatorHint, text: $username)
+                        TextField("", text: $username, prompt: Text(PackingFlow.operatorHint).foregroundStyle(Theme.secondary))
                             .textContentType(.name)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -74,7 +75,7 @@ struct LoginView: View {
                     } label: {
                         if working { ProgressView().tint(Theme.brandDeep) } else { Text("Accedi") }
                     }
-                    .buttonStyle(PrimaryButtonStyle(color: Theme.cream, foreground: Theme.brandDeep))
+                    .buttonStyle(PrimaryButtonStyle(color: Theme.cream, foreground: Theme.brandDeep, onDark: true))
                     .disabled(working || username.isEmpty || password.isEmpty)
                     .padding(.top, 6)
                 }
@@ -90,7 +91,7 @@ struct LoginView: View {
         }
         .scrollContentBackground(.hidden)
         .background(
-            LinearGradient(colors: [Theme.brand, Theme.brandDeep], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Theme.brandDeep, Theme.brandNight], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
     }
