@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { ADMIN_CSP, ADMIN_HTML, ADMIN_JS } from './admin-page.ts';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { ADMIN_CSP, ADMIN_HTML, ADMIN_JS } from './admin-page.ts';
 import { authenticate, login, logout } from './auth.ts';
 import * as packing from './pack.ts';
 import type { Ctx } from './pack.ts';
@@ -65,7 +65,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     c.header('cache-control', 'no-store');
     return c.json(packing.completedOrders(ctx));
   });
-  app.get('/v1/workload', (c) => c.json(packing.workload(ctx, c.get('user'))));
+  app.get('/v1/workload',(c) => c.json(packing.workload(ctx, c.get('user'))));
   app.post('/v1/refresh', async (c) => {
     await refresh();
     return c.json(packing.workload(ctx, c.get('user')));
@@ -78,7 +78,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
   app.get('/v1/packs/:id', (c) => c.json(packing.viewPack(ctx, c.req.param('id'), c.get('user'))));
   app.post('/v1/packs/:id/scans', async (c) => {
     const b = await body(c);
-    return c.json(packing.recordScan(ctx, c.get('user'), c.req.param('id'), str(b.barcode), typeof b.symbology === 'string' ? b.symbology : null));
+    return c.json(packing.recordScan(ctx, c.get('user'), c.req.param('id'), str(b.barcode), typeof b.symbology === 'string' ? b.symbology : null, typeof b.lineId === 'string' ? b.lineId : null));
   });
   app.post('/v1/packs/:id/confirm', async (c) => {
     const b = await body(c);
@@ -93,7 +93,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     return c.json(packing.resolveDiscrepancy(ctx, c.get('user'), c.req.param('id'), c.req.param('discrepancyId'), str(b.resolution), str(b.actionId), num(b.version)));
   });
   for (const [path, action] of Object.entries({
-    reconcile: packing.reconcile, takeover: packing.takeOver, complete: packing.complete, reopen: packing.reopen, release: packing.release,
+    reconcile: packing.reconcile, takeover: packing.takeOver, restart: packing.restart, complete: packing.complete, reopen: packing.reopen, release: packing.release,
   })) {
     app.post(`/v1/packs/:id/${path}`, async (c) => {
       const b = await body(c);
