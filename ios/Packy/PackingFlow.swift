@@ -7,6 +7,8 @@ enum PackingFlow {
     static let operatorField = "Nome utente"
     static let operatorHint = "es. ana"
     static let sampleMode = "Ordini di prova per test locali. Non sono dati reali dei clienti."
+    static let sampleModeShort = "Ordini di prova · non sono dati reali"
+    static let serverUnreachable = "Server non raggiungibile"
     static let listHeading = "Ordini"
     static let listPurpose = "Inizia un ordine, finiscilo, poi passa al successivo."
     static let startAction = "Imballa"
@@ -37,6 +39,32 @@ enum PackingFlow {
 
     static func hasRecordedCount(verified: Int, uncertain: Int) -> Bool {
         verified > 0 || uncertain > 0
+    }
+
+    /// Search matches the customer or the order number, ignoring case, accents and a leading "#".
+    static func matches(_ query: String, recipient: String?, reference: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard !q.isEmpty else { return true }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        return (recipient ?? "").range(of: q, options: options) != nil || reference.range(of: q, options: options) != nil
+    }
+
+    /// Packed orders grouped by day, newest first: "Oggi", "Ieri", then the date.
+    static func packedGroups(_ orders: [PackedOrder], now: Date = .now, calendar: Calendar = .current) -> [(label: String, orders: [PackedOrder])] {
+        let sorted = orders.sorted { $0.completedAt > $1.completedAt }
+        var groups: [(label: String, orders: [PackedOrder])] = []
+        for order in sorted {
+            let label: String
+            if calendar.isDate(order.date, inSameDayAs: now) {
+                label = "Oggi"
+            } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(order.date, inSameDayAs: yesterday) {
+                label = "Ieri"
+            } else {
+                label = order.date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "it_IT"))).capitalized
+            }
+            if groups.last?.label == label { groups[groups.count - 1].orders.append(order) } else { groups.append((label, [order])) }
+        }
+        return groups
     }
 
     static func packableOrders(_ orders: [WorkloadOrder]) -> [WorkloadOrder] {
