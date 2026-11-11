@@ -8,7 +8,7 @@ const physical = (lineId: string, sku: string | null, title: string, required: n
   ({ lineId, sku, title, variantTitle: null, required, kind: 'physical' as const, kindReason: null });
 
 const order = (id: string, reference: string, partial: Partial<SourceOrder>): SourceOrder => ({
-  source: 'fixture', orderId: id, reference, recipient: 'Fixture recipient',
+  source: 'fixture', orderId: id, reference, recipient: 'Cliente di prova',
   createdAt: '2026-11-07T09:00:00Z', sourceUpdatedAt: '2026-11-07T09:00:00Z',
   eligible: true, ineligibleReason: null, lines: [], nonPhysical: [], ...partial,
 });
@@ -17,11 +17,11 @@ export function fixtureOrders(): SourceOrder[] {
   return [
     order('f1', '#FIX-1001', {
       lines: [physical('f1-a', 'MS001', 'Sapone mani piccolo', 3), physical('f1-b', 'MS024', 'Candela', 1)],
-      nonPhysical: [{ title: 'Express', reason: 'Shipping charge' }],
+      nonPhysical: [{ title: 'Express', reason: 'Spedizione' }],
     }),
     order('f2', '#FIX-1002 free sample', {
       lines: [physical('f2-a', 'MS002', 'Sapone mani grande', 1), physical('f2-b', 'MS040', 'SAMPLE gratis', 1)],
-      nonPhysical: [{ title: 'Standard', reason: 'Shipping charge' }],
+      nonPhysical: [{ title: 'Standard', reason: 'Spedizione' }],
     }),
     order('f3', '#FIX-1003 blank SKU', {
       lines: [physical('f3-a', null, 'Discovery Set / Profumi in Olio', 1), physical('f3-b', 'MS001', 'Sapone mani', 1)],
@@ -30,10 +30,10 @@ export function fixtureOrders(): SourceOrder[] {
     order('f5', '#FIX-1005 uncertain row', {
       lines: [
         physical('f5-a', 'MS002', 'Sapone mani', 1),
-        { lineId: 'f5-b', sku: null, title: 'Omaggio', variantTitle: null, required: 1, kind: 'uncertain', kindReason: 'The source does not say whether this row is a physical item.' },
+        { lineId: 'f5-b', sku: null, title: 'Omaggio', variantTitle: null, required: 1, kind: 'uncertain', kindReason: 'La fonte non dice se questa riga è un prodotto fisico.' },
       ],
     }),
-    order('f6', '#FIX-1006 unpaid', { eligible: false, ineligibleReason: 'Payment status is PENDING.', lines: [physical('f6-a', 'MS001', 'Sapone mani', 1)] }),
+    order('f6', '#FIX-1006 unpaid', { eligible: false, ineligibleReason: 'Stato del pagamento: PENDING.', lines: [physical('f6-a', 'MS001', 'Sapone mani', 1)] }),
   ];
 }
 
@@ -41,8 +41,8 @@ export const FIXTURE_CATALOG: CatalogProduct[] = [
   { code: 'MS001', name: 'Cardamomo Sapone Mani 250ml', ficId: 'fixture-1' },
   { code: 'MS002', name: 'Cardamomo Sapone Mani 500ml', ficId: 'fixture-2' },
   { code: 'MS010', name: 'Travel Kit', ficId: 'fixture-10' },
-  { code: 'MS024', name: 'Fixture product MS024', ficId: 'fixture-24' },
-  { code: 'MS040', name: 'Fixture product MS040', ficId: 'fixture-40' },
+  { code: 'MS024', name: 'Prodotto di prova MS024', ficId: 'fixture-24' },
+  { code: 'MS040', name: 'Prodotto di prova MS040', ficId: 'fixture-40' },
 ];
 
 export const FIXTURE_BARCODES: BarcodeEntry[] = [

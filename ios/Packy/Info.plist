@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleDevelopmentRegion</key><string>it</string>
+  <key>CFBundleLocalizations</key><array><string>it</string></array>
   <key>CFBundleDisplayName</key><string>Packy</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
@@ -15,7 +16,7 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
-  <key>NSCameraUsageDescription</key><string>Packy reads product barcodes to check what goes in each parcel.</string>
+  <key>NSCameraUsageDescription</key><string>Packy legge i codici a barre dei prodotti per controllare cosa va in ogni pacco.</string>
   <key>PackyAPIURL</key><string>$(PACKY_API_URL)</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>

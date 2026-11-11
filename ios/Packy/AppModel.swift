@@ -29,7 +29,7 @@ final class AppModel {
         } catch APIFailure.rejected(_, let message, _) {
             loginError = message
         } catch {
-            loginError = "The server could not be reached. You are not signed in."
+            loginError = "Server non raggiungibile. Accesso non effettuato."
         }
     }
 
@@ -54,7 +54,7 @@ final class AppModel {
         } catch APIFailure.signedOut {
             signOutLocally()
         } catch {
-            loadState = .failed("Packy could not reach the server. This is not an empty list. Orders are unknown until it connects.")
+            loadState = .failed("Packy non raggiunge il server. Non significa che non ci siano ordini: non si sa finché non si collega.")
         }
     }
 
