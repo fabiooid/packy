@@ -1,0 +1,64 @@
+import SwiftUI
+
+@main
+struct PackyApp: App {
+    @State private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                if model.signedIn {
+                    WorkloadView()
+                } else {
+                    LoginView()
+                }
+            }
+            .environment(model)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, model.signedIn { Task { await model.refresh() } }
+        }
+    }
+}
+
+struct LoginView: View {
+    @Environment(AppModel.self) private var model
+    @State private var username = ""
+    @State private var password = ""
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Spacer()
+            Text("Packy").font(.largeTitle.bold())
+            Text("Manisante packing check").foregroundStyle(.secondary)
+            TextField("Username", text: $username)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+                .textFieldStyle(.roundedBorder)
+            if let error = model.loginError {
+                Text(error).foregroundStyle(.red).font(.callout)
+            }
+            Button {
+                working = true
+                Task {
+                    await model.login(username: username, password: password)
+                    password = ""
+                    working = false
+                }
+            } label: {
+                Text(working ? "Signing in..." : "Sign in").frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(working || username.isEmpty || password.isEmpty)
+            Spacer()
+            Spacer()
+        }
+        .padding(24)
+    }
+}

@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-11-07",
+  "note": "Barcode to FIC Codice map. Values are exact strings. shopify_variant rows were revalidated read-only against the live store on 2026-11-07 and are refreshed on each pull. marketplace_register rows come from the brief. Their source file was not available on the build machine.",
+  "entries": [
+    { "barcode": "0806812399109", "codice": "MS024", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338357399890" },
+    { "barcode": "0806812399116", "codice": "MS025", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338356187474" },
+    { "barcode": "0806812399123", "codice": "MS026", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338351567186" },
+    { "barcode": "0806812399147", "codice": "MS027", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338349011282" },
+    { "barcode": "0806812399130", "codice": "MS028", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338343768402" },
+    { "barcode": "0806812399154", "codice": "MS029", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338340917586" },
+    { "barcode": "0806812399161", "codice": "MS030", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338340065618" },
+    { "barcode": "0806812399192", "codice": "MS040", "provenance": "shopify_variant", "sourceRef": "gid://shopify/ProductVariant/53338339574098" },
+    { "barcode": "8050038450997", "codice": "MS001", "provenance": "marketplace_register", "sourceRef": "packing-app-product-brief.md" },
+    { "barcode": "8050038450980", "codice": "MS002", "provenance": "marketplace_register", "sourceRef": "packing-app-product-brief.md" }
+  ],
+  "coverage": {
+    "activeShopifyVariants": 33,
+    "mapped": ["MS001", "MS002", "MS024", "MS025", "MS026", "MS027", "MS028", "MS029", "MS030", "MS040"],
+    "awaitingRegisterFile": ["MS003", "MS004", "MS005", "MS006", "MS007", "MS008", "MS009", "MS011", "MS012", "MS013", "MS014", "MS015", "MS016", "MS017", "MS019", "MS020", "MS022", "MS023", "MS031", "MS032"],
+    "noBarcodeKnown": ["MS010"],
+    "blankShopifySku": [
+      { "variant": "gid://shopify/ProductVariant/46663755202898", "sourceTitle": "Vetiver di Java / Spray per l'ambiente 250ml" },
+      { "variant": "gid://shopify/ProductVariant/53338337050962", "sourceTitle": "Discovery Set / Profumi in Olio 5ml" }
+    ],
+    "conflicts": []
+  }
+}
