@@ -58,6 +58,24 @@ final class AppModel {
         }
     }
 
+    /// "Cancella" on the in-progress card: the box is emptied, counts go and the order is free again.
+    func cancel(_ order: WorkloadOrder) async -> String? {
+        guard let packId = order.packId else { return nil }
+        do {
+            let pack: Pack = try await api.send("GET", "v1/packs/\(packId)")
+            let _: EmptyResponse = try await api.send("POST", "v1/packs/\(packId)/release", body: ["actionId": UUID().uuidString, "version": pack.version])
+            await refresh()
+            return nil
+        } catch APIFailure.signedOut {
+            signOutLocally()
+            return nil
+        } catch APIFailure.rejected(_, let message, _) {
+            return message
+        } catch {
+            return "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova."
+        }
+    }
+
     /// The packing session that must resume after the app is closed mid-order.
     func activeOwnedOrder() -> WorkloadOrder? {
         PackingFlow.activeOwnedOrder(workload?.orders ?? [])

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AudioToolbox
 import UIKit
 
 @Observable @MainActor
@@ -21,6 +22,8 @@ final class PackModel {
     var pack: Pack
     var card: Card = .idle
     var busy = false
+    /// The product the packer chose to scan. The camera only runs while one is chosen.
+    var selectedLineId: String?
     /// True after the order was cleared, so leaving the screen does not clear it twice.
     var didRelease = false
     private var queuedRead: (String, String?)?
@@ -32,7 +35,7 @@ final class PackModel {
     }
 
     func handleRead(_ barcode: String, symbology: String?) {
-        guard pack.canScan else { return }
+        guard pack.canScan, selectedLineId != nil else { return }
         if busy {
             queuedRead = (barcode, symbology)
             return
@@ -44,7 +47,7 @@ final class PackModel {
         busy = true
         card = .checking(barcode)
         do {
-            let response: ScanResponse = try await api.send("POST", "v1/packs/\(pack.id)/scans", body: ["barcode": barcode, "symbology": symbology ?? ""])
+            let response: ScanResponse = try await api.send("POST", "v1/packs/\(pack.id)/scans", body: ["barcode": barcode, "symbology": symbology ?? "", "lineId": selectedLineId ?? ""])
             pack = response.pack
             if response.scan.outcome == "eligible" {
                 card = .offer(response.scan)
@@ -72,6 +75,9 @@ final class PackModel {
             let counted = scan.unitNumber ?? 1
             let required = scan.required ?? counted
             card = .recorded("Contato. \(PackingFlow.countLabel(verified: counted, required: required))")
+            if let selected = selectedLineId, pack.lines.first(where: { $0.lineId == selected })?.state == "done" {
+                selectedLineId = nil
+            }
             Feedback.recorded()
         } catch APIFailure.unreachable {
             card = .unknownResult(scan: scan, actionId: actionId)
@@ -151,8 +157,18 @@ final class PackModel {
     }
 }
 
+/// Haptics plus sound, so a packer hears a wrong scan without looking at the phone.
+/// System sounds follow the ring/silent switch.
 enum Feedback {
     static func accepted() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    static func recorded() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func rejected() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+
+    static func recorded() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        AudioServicesPlaySystemSound(1057)
+    }
+
+    static func rejected() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        AudioServicesPlayAlertSound(1053)
+    }
 }

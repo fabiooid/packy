@@ -170,7 +170,7 @@ describe('3 and 6. units, detection, repeated reads', () => {
 });
 
 describe('4. wrong product and excess', () => {
-  test('the lookalike earns no credit and blocks until the item is accounted for', async () => {
+  test('the lookalike earns no credit and is reported without blocking the order', async () => {
     let p = await open(ana, 'f1');
     const s = await scan(ana, p, MS002);
     assert.equal(s.json.scan.outcome, 'wrong_product');
@@ -183,24 +183,67 @@ describe('4. wrong product and excess', () => {
     const offer = await confirm(ana, s.json.pack, s.json.scan.id);
     assert.equal(offer.json.error.code, 'scan_not_eligible');
     p = s.json.pack;
+    assert.equal(s.json.scan.discrepancyId, null);
+    assert.deepEqual(s.json.pack.discrepancies, []);
     p = await packUnits(ana, p, [MS001, MS001, MS001, MS024]);
-    assert.deepEqual(codes(p), ['discrepancy_open']);
-    assert.equal(p.canComplete, false);
-    assert.equal((await act(ana, p, 'complete')).json.error.code, 'completion_blocked');
-    p = (await resolve(ana, p, s.json.scan.discrepancyId, 'set_aside')).json;
+    assert.deepEqual(codes(p), []);
     assert.equal(p.canComplete, true);
   });
-  test('excess never raises the count and needs a physical answer', async () => {
+  test('excess never raises the count and does not block', async () => {
     let p = await open(ana, 'f2');
     p = await packUnit(ana, p, MS002);
     const s = await scan(ana, p, MS002);
     assert.equal(s.json.scan.outcome, 'excess');
     assert.equal(s.json.pack.lines[0].verified, 1);
-    assert.ok(codes(s.json.pack).includes('discrepancy_open'));
-    assert.deepEqual(s.json.pack.discrepancies[0].resolutions, ['set_aside', 'repeat_read']);
+    assert.deepEqual(s.json.pack.discrepancies, []);
     const again = await scan(ana, s.json.pack, MS002);
-    assert.equal(again.json.pack.discrepancies.length, 1);
-    assert.equal(again.json.pack.discrepancies[0].readCount, 2);
+    assert.equal(again.json.pack.lines[0].verified, 1);
+  });
+});
+
+describe('product-first scanning', () => {
+  const scanFor = (t: string, pack: any, barcode: string, lineId: string) =>
+    call(t, 'POST', `/v1/packs/${pack.id}/scans`, { barcode, symbology: 'ean13', lineId });
+
+  test('with a product chosen, only that product can be counted', async () => {
+    const p = await open(ana, 'f1');
+    const other = await scanFor(ana, p, MS001, 'f1-b');
+    assert.equal(other.json.scan.outcome, 'wrong_product');
+    assert.match(other.json.scan.message, /Stai scansionando Prodotto di prova MS024 \(MS024\)/);
+    assert.equal(other.json.pack.lines[0].verified, 0);
+    const right = await scanFor(ana, p, MS024, 'f1-b');
+    assert.equal(right.json.scan.outcome, 'eligible');
+    assert.equal(right.json.scan.lineId, 'f1-b');
+  });
+
+  test('the chosen line must be on the order', async () => {
+    const p = await open(ana, 'f1');
+    const bad = await scanFor(ana, p, MS001, 'not-a-line');
+    assert.equal(bad.status, 400);
+    assert.equal(bad.json.error.code, 'bad_line');
+  });
+});
+
+describe('restart from 0', () => {
+  test('restart clears every count and keeps the packer on the order', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnits(ana, p, [MS001, MS001]);
+    assert.equal(p.lines[0].verified, 2);
+    p = (await act(ana, p, 'restart')).json;
+    assert.equal(p.status, 'active');
+    assert.equal(p.isOwner, true);
+    assert.equal(p.lines[0].verified, 0);
+    assert.equal(p.hasRecordedCount, false);
+    assert.equal(p.canLeave, true);
+    p = await packUnit(ana, p, MS001);
+    assert.equal(p.lines[0].verified, 1);
+  });
+
+  test('only the packer can restart', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    const seen = await open(ben, 'f1');
+    assert.equal((await act(ben, seen, 'restart')).status, 403);
   });
 });
 
@@ -300,21 +343,59 @@ describe('v1 session and counting rules', () => {
     assert.equal(next.orderId, 'f2');
   });
 
-  test('a recorded count locks the session until the order is packed', async () => {
+  test('a recorded count keeps the session until the order is packed or cancelled', async () => {
     let p = await open(ana, 'f1');
     p = await packUnit(ana, p, MS001);
     assert.equal(p.hasRecordedCount, true);
     assert.equal(p.canLeave, false);
-    const leave = await act(ana, p, 'release');
-    assert.equal(leave.status, 409);
-    assert.equal(leave.json.error.code, 'session_locked');
-    assert.equal(leave.json.pack.lines[0].verified, 1);
     const blocked = await call(ana, 'POST', '/v1/packs', { source: 'fixture', orderId: 'f2' });
     assert.equal(blocked.status, 409);
     assert.equal(blocked.json.error.code, 'order_already_open');
     const resumed = await open(ana, 'f1');
     assert.equal(resumed.id, p.id);
     assert.equal(resumed.lines[0].verified, 1);
+  });
+
+  test('cancelling an order in progress clears its counts and frees the operator', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    assert.equal((await act(ben, p, 'release')).status, 403);
+    assert.equal((await act(ana, p, 'release')).status, 200);
+    const w = (await call(ana, 'GET', '/v1/workload')).json;
+    const f1 = w.orders.find((o: any) => o.orderId === 'f1');
+    assert.equal(f1.packId, null);
+    const next = await open(ana, 'f2');
+    assert.equal(next.orderId, 'f2');
+    const units = db.prepare(`SELECT status, removal_reason FROM units WHERE pack_id = ?`).all(p.id) as any[];
+    assert.deepEqual(units.map((u) => [u.status, u.removal_reason]), [['removed', 'box_emptied']]);
+  });
+
+  test('a normal locked order cannot be emptied and left', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    assert.equal(p.canEmptyAndLeave, false);
+  });
+
+  test('a cancelled order with counted units can be emptied and left', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    fixture.orders[0].eligible = false;
+    fixture.orders[0].ineligibleReason = 'Cancelled at the source.';
+    await refresh(ana);
+    p = (await call(ana, 'GET', `/v1/packs/${p.id}`)).json;
+    assert.equal(p.canLeave, false);
+    assert.equal(p.canEmptyAndLeave, true);
+    assert.equal((await act(ana, p, 'release')).status, 200);
+    const next = await open(ana, 'f2');
+    assert.equal(next.orderId, 'f2');
+  });
+
+  test('an order with a line that can never be verified can be emptied and left', async () => {
+    let p = await open(ana, 'f3');
+    p = await packUnit(ana, p, MS001);
+    assert.ok(codes(p).includes('identity_unresolved'));
+    assert.equal(p.canEmptyAndLeave, true);
+    assert.equal((await act(ana, p, 'release')).status, 200);
   });
 
   test('scans in any order track the matching line without counting until confirm', async () => {
@@ -368,7 +449,7 @@ describe('v1 session and counting rules', () => {
     assert.equal((await act(ana, p, 'complete')).json.error.code, 'completion_blocked');
   });
 
-  test('an extra unit names the product, does not change the list count, and keeps done locked', async () => {
+  test('an extra unit names the product and does not change the list count', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
     assert.equal(p.canComplete, true);
@@ -377,8 +458,7 @@ describe('v1 session and counting rules', () => {
     assert.match(s.json.scan.message, /Cardamomo Sapone Mani 500ml \(MS002\)/);
     assert.match(s.json.scan.message, /Non contato/);
     assert.equal(s.json.pack.lines[0].verified, 1);
-    assert.equal(s.json.pack.canComplete, false);
-    assert.ok(codes(s.json.pack).includes('discrepancy_open'));
+    assert.equal(s.json.pack.canComplete, true);
   });
 });
 
@@ -462,11 +542,12 @@ describe('8. changes and conflicting work', () => {
 });
 
 describe('9. unknown, ambiguous, kits, leading zeroes', () => {
-  test('an unknown code earns nothing and stays open', async () => {
+  test('an unknown code earns nothing and does not block', async () => {
     const p = await open(ana, 'f1');
     const s = await scan(ana, p, '0000000000000');
     assert.equal(s.json.scan.outcome, 'unknown_code');
-    assert.ok(codes(s.json.pack).includes('discrepancy_open'));
+    assert.equal(s.json.pack.lines[0].verified, 0);
+    assert.ok(!codes(s.json.pack).includes('discrepancy_open'));
   });
   test('one code mapped to two products is ambiguous and earns nothing', async () => {
     saveBarcodes(db, [{ barcode: MS001, codice: 'MS002', provenance: 'test', sourceRef: null }], clock);
