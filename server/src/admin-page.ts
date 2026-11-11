@@ -50,6 +50,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .stat.done b { color: var(--success); }
 .by b { color: var(--ink); font-weight: 600; }
 .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+.pager button:disabled { color: var(--muted); cursor: default; }
 @media (max-width: 560px) {
   .stats { grid-template-columns: 1fr 1fr; }
   .stat:last-child { grid-column: span 2; }
@@ -86,6 +88,11 @@ header { display: flex; align-items: center; justify-content: space-between; gap
       <div class="card stat"><b id="s-month">0</b><span>Ultimi 30 giorni</span></div>
     </div>
     <div id="list"></div>
+    <div id="pager" class="pager" hidden>
+      <button id="prev" class="link" type="button">Precedente</button>
+      <span id="page-label" class="muted"></span>
+      <button id="next" class="link" type="button">Successivo</button>
+    </div>
     <div id="dash-error" class="error" role="alert"></div>
   </section>
 </main>
@@ -128,19 +135,38 @@ export const ADMIN_JS = `(() => {
     return body;
   }
 
+  const PAGE = 15;
+  let page = 0;
+  let packed = [];
+
   function render(data) {
     $('fixture').hidden = !data.fixture;
     $('updated').textContent = 'Aggiornato alle ' + timeFmt.format(Date.now()) + ' · ' + data.total + ' in totale';
     const today = startOfDay(Date.now());
     const week = today - 6 * 86400000;
-    $('s-today').textContent = data.orders.filter((o) => o.completedAt >= today).length;
-    $('s-week').textContent = data.orders.filter((o) => o.completedAt >= week).length;
-    $('s-month').textContent = data.orders.length;
+    packed = data.orders;
+    $('s-today').textContent = packed.filter((o) => o.completedAt >= today).length;
+    $('s-week').textContent = packed.filter((o) => o.completedAt >= week).length;
+    $('s-month').textContent = packed.length;
+    page = 0;
+    drawList();
+  }
+
+  function drawList() {
     const list = $('list');
+    const pager = $('pager');
     list.replaceChildren();
-    if (!data.orders.length) { const c = el('div', 'card empty', 'Nessun ordine imballato negli ultimi 30 giorni.'); list.append(c); return; }
+    if (!packed.length) {
+      list.append(el('div', 'card empty', 'Nessun ordine imballato negli ultimi 30 giorni.'));
+      pager.hidden = true;
+      return;
+    }
+    const pages = Math.max(1, Math.ceil(packed.length / PAGE));
+    if (page > pages - 1) page = pages - 1;
+    if (page < 0) page = 0;
+    const today = startOfDay(Date.now());
     let card = null, current = null;
-    for (const o of data.orders) {
+    for (const o of packed.slice(page * PAGE, (page + 1) * PAGE)) {
       const day = startOfDay(o.completedAt);
       if (day !== current) {
         current = day;
@@ -163,6 +189,11 @@ export const ADMIN_JS = `(() => {
       row.append(right);
       card.append(row);
     }
+    if (pages <= 1) { pager.hidden = true; return; }
+    pager.hidden = false;
+    $('prev').disabled = page === 0;
+    $('next').disabled = page >= pages - 1;
+    $('page-label').textContent = (page + 1) + ' di ' + pages;
   }
 
   async function load() {
@@ -183,6 +214,8 @@ export const ADMIN_JS = `(() => {
     try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch {}
     store.set(null); show('login');
   });
+  $('prev').addEventListener('click', () => { if (page > 0) { page -= 1; drawList(); } });
+  $('next').addEventListener('click', () => { page += 1; drawList(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && store.get()) load(); });
 
   if (store.get()) load(); else show('login');
