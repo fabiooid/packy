@@ -64,6 +64,7 @@ export interface LineView {
   identity: Identity;
   verification: Verification | null;
   units: { id: string; status: string; confirmedAt: number; confirmedBy: string }[];
+  canManualConfirm: boolean;
 }
 
 export interface Blocker { code: string; message: string; lineId?: string }
@@ -100,10 +101,23 @@ export function findLivePack(db: DatabaseSync, source: string, orderId: string):
   return db.prepare(`SELECT * FROM packs WHERE source = ? AND order_id = ? AND status IN ('active','completed')`).get(source, orderId) as PackRow | undefined;
 }
 
+/** A line has a barcode when the catalog maps its SKU to a usable code. Otherwise the operator confirms by hand, unless a kit or barcode conflict still blocks it. */
 function classifyLine(db: DatabaseSync, line: SourceLine, policies: Policies): { identity: Identity; verification: Verification | null; blocked: boolean } {
   const identity = resolveIdentity(db, line);
-  const verification = identity.status === 'resolved' && identity.codice ? resolveVerification(db, identity.codice, policies) : null;
-  const blocked = line.kind === 'uncertain' || identity.status === 'unresolved' || verification?.method !== 'barcode';
+  const resolved = identity.status === 'resolved' && identity.codice ? resolveVerification(db, identity.codice, policies) : null;
+  const blankSku = !line.sku || line.sku.trim() === '';
+  const catalogMiss = identity.status === 'unresolved' && !blankSku;
+  const policyBlocked = resolved?.blockCode === 'kit_policy' || resolved?.blockCode === 'barcode_conflict';
+  const blocked = catalogMiss || policyBlocked;
+  let verification = resolved;
+  if (!blocked && verification?.method !== 'barcode') {
+    verification = { method: 'manual', barcodes: verification?.barcodes ?? [], blockCode: verification?.blockCode ?? null, reason: null };
+    return {
+      identity: identity.status === 'unresolved' ? { ...identity, reason: null } : identity,
+      verification,
+      blocked,
+    };
+  }
   return { identity, verification, blocked };
 }
 
@@ -171,9 +185,11 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
     const uncertain = own.length - verified;
     const remaining = Math.max(0, line.required - own.length);
     const state: LineView['state'] = blocked ? 'blocked' : uncertain > 0 ? 'recheck' : remaining === 0 ? 'done' : verified > 0 ? 'partial' : 'todo';
+    const canManualConfirm = !blocked && verification?.method === 'manual' && (remaining > 0 || uncertain > 0);
     return {
       lineId: line.lineId, kind: line.kind, kindReason: line.kindReason, required: line.required, verified, uncertain, remaining, state, identity, verification,
       units: own.map((u) => ({ id: u.id, status: u.status, confirmedAt: u.confirmed_at, confirmedBy: userName(db, u.confirmed_by) })),
+      canManualConfirm,
     };
   });
 
@@ -186,10 +202,17 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   const catalog = catalogProblem(ctx);
   if (catalog) blockers.push({ code: 'catalog_stale', message: catalog });
   for (const line of lines) {
-    const name = line.identity.codice ?? 'Riga non identificata';
-    if (line.kind === 'uncertain') blockers.push({ code: 'classification_uncertain', lineId: line.lineId, message: line.kindReason ?? 'Questa riga potrebbe essere un prodotto fisico.' });
-    if (line.identity.status === 'unresolved') blockers.push({ code: 'identity_unresolved', lineId: line.lineId, message: line.identity.reason ?? 'Prodotto non identificato.' });
-    else if (line.verification?.blockCode) blockers.push({ code: line.verification.blockCode, lineId: line.lineId, message: line.verification.reason ?? 'Questo prodotto non si può verificare.' });
+    const name = line.identity.codice ?? line.identity.sourceTitle ?? 'Riga non identificata';
+    if (line.state === 'blocked') {
+      if (line.kind === 'uncertain' && line.verification?.method !== 'manual') {
+        blockers.push({ code: 'classification_uncertain', lineId: line.lineId, message: line.kindReason ?? 'Questa riga potrebbe essere un prodotto fisico.' });
+      }
+      if (line.identity.status === 'unresolved' && line.verification?.method !== 'manual') {
+        blockers.push({ code: 'identity_unresolved', lineId: line.lineId, message: line.identity.reason ?? 'Prodotto non identificato.' });
+      } else if (line.verification?.blockCode === 'kit_policy' || line.verification?.blockCode === 'barcode_conflict') {
+        blockers.push({ code: line.verification.blockCode, lineId: line.lineId, message: line.verification.reason ?? 'Questo prodotto non si può verificare.' });
+      }
+    }
     if (line.uncertain > 0) blockers.push({ code: 'units_uncertain', lineId: line.lineId, message: `${name}: ${line.uncertain} da ricontrollare.` });
     if (line.remaining > 0) blockers.push({ code: 'units_missing', lineId: line.lineId, message: `${name}: ne mancano ${line.remaining} su ${line.required}.` });
   }
@@ -377,29 +400,50 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
   });
 }
 
+function creditOneUnit(ctx: Ctx, pack: PackRow, user: User, view: PackView, line: LineView, barcode: string): boolean {
+  const recheck = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND line_id = ? AND status = 'uncertain' ORDER BY confirmed_at LIMIT 1`).get(pack.id, line.lineId) as { id: string } | undefined;
+  if (recheck) {
+    ctx.db.prepare(`UPDATE units SET status = 'verified', barcode = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ?`).run(barcode, user.id, ctx.now(), recheck.id);
+    return true;
+  }
+  if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'Questa riga è già completa. Non è stato aggiunto nulla.', { pack: view });
+  ctx.db.prepare(`INSERT INTO units (id, pack_id, line_id, codice, barcode, status, confirmed_by, confirmed_at) VALUES (?,?,?,?,?,'verified',?,?)`)
+    .run(randomUUID(), pack.id, line.lineId, line.identity.codice ?? '', barcode, user.id, ctx.now());
+  return false;
+}
+
+function confirmManualUnit(ctx: Ctx, user: User, pack: PackRow, view: PackView, lineId: string): PackView {
+  const line = view.lines.find((l) => l.lineId === lineId);
+  if (!line) throw new ApiError(400, 'bad_line', 'Il prodotto scelto non è in questo ordine.', { pack: view });
+  if (line.verification?.method === 'barcode') {
+    throw new ApiError(409, 'scan_required', 'Questa riga si conferma scansionando il codice.', { pack: view });
+  }
+  if (line.state === 'blocked' || line.verification?.method !== 'manual') {
+    throw new ApiError(409, 'line_blocked', 'Questa riga non si può confermare a mano.', { pack: view });
+  }
+  const recheck = creditOneUnit(ctx, pack, user, view, line, '');
+  logEvent(ctx, pack.id, 'unit_confirmed', user.id, { lineId: line.lineId, manual: true, recheck });
+  bump(ctx, pack.id);
+  return viewPack(ctx, pack.id, user);
+}
+
 /** The deliberate tap. This is the only way a unit earns credit. */
-export function confirmUnit(ctx: Ctx, user: User, packId: string, scanId: string, actionId: string, version: number): PackView {
+export function confirmUnit(ctx: Ctx, user: User, packId: string, scanId: string, actionId: string, version: number, lineId: string | null = null): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack, view } = guardWrite(ctx, packId, user, version);
     requireScannable(view);
+    if (lineId) return confirmManualUnit(ctx, user, pack, view, lineId);
     const scan = ctx.db.prepare('SELECT * FROM scans WHERE id = ? AND pack_id = ?').get(scanId, pack.id) as ScanRow | undefined;
     if (!scan || scan.outcome !== 'eligible' || !scan.line_id) throw new ApiError(409, 'scan_not_eligible', 'Questa scansione non si può confermare.', { pack: view });
     if (scan.user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi ha scansionato può confermare.', { pack: view });
     if (scan.consumed_at) throw new ApiError(409, 'scan_used', 'Scansione già usata. Scansiona il pezzo successivo.', { pack: view });
     if ((scan.expires_at ?? 0) < ctx.now()) throw new ApiError(409, 'scan_expired', 'Scansione scaduta. Scansiona di nuovo il prodotto.', { pack: view });
     const line = view.lines.find((l) => l.lineId === scan.line_id);
-    if (!line || line.state === 'blocked' || !line.identity.codice) throw new ApiError(409, 'line_blocked', 'Questa riga non si può verificare ora.', { pack: view });
+    if (!line || line.state === 'blocked') throw new ApiError(409, 'line_blocked', 'Questa riga non si può verificare ora.', { pack: view });
 
-    const recheck = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND line_id = ? AND status = 'uncertain' ORDER BY confirmed_at LIMIT 1`).get(pack.id, line.lineId) as { id: string } | undefined;
-    if (recheck) {
-      ctx.db.prepare(`UPDATE units SET status = 'verified', barcode = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ?`).run(scan.barcode, user.id, ctx.now(), recheck.id);
-    } else {
-      if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'Questa riga è già completa. Non è stato aggiunto nulla.', { pack: view });
-      ctx.db.prepare(`INSERT INTO units (id, pack_id, line_id, codice, barcode, status, confirmed_by, confirmed_at) VALUES (?,?,?,?,?,'verified',?,?)`)
-        .run(randomUUID(), pack.id, line.lineId, line.identity.codice, scan.barcode, user.id, ctx.now());
-    }
+    const recheck = creditOneUnit(ctx, pack, user, view, line, scan.barcode);
     ctx.db.prepare('UPDATE scans SET consumed_at = ? WHERE id = ?').run(ctx.now(), scan.id);
-    logEvent(ctx, pack.id, 'unit_confirmed', user.id, { lineId: line.lineId, recheck: Boolean(recheck) });
+    logEvent(ctx, pack.id, 'unit_confirmed', user.id, { lineId: line.lineId, recheck });
     bump(ctx, pack.id);
     return viewPack(ctx, pack.id, user);
   });

@@ -75,7 +75,13 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
     }
   }
 
-  const nonPhysical: NonPhysicalRow[] = node.shippingLines.nodes.map((s) => ({ title: s.title, reason: 'Spedizione' }));
+  node.shippingLines.nodes.forEach((s, index) => {
+    lines.push({
+      lineId: `shipping:${index}:${s.title}`, sku: null, title: s.title, variantTitle: null,
+      required: 1, kind: 'physical', kindReason: null,
+    });
+  });
+  const nonPhysical: NonPhysicalRow[] = [];
   const truncated = Boolean(
     node.lineItems.pageInfo?.hasNextPage || node.fulfillmentOrders.pageInfo?.hasNextPage ||
     node.fulfillmentOrders.nodes.some((fo) => fo.lineItems.pageInfo?.hasNextPage),

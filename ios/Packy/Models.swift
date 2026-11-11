@@ -87,6 +87,7 @@ struct Line: Decodable, Identifiable {
     let identity: Identity
     let verification: Verification?
     let units: [PackedUnit]
+    let canManualConfirm: Bool
     var id: String { lineId }
 }
 

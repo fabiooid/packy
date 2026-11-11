@@ -45,6 +45,19 @@ const open = async (t: string, orderId: string) => (await call(t, 'POST', '/v1/p
 const scan = (t: string, pack: any, barcode: string) => call(t, 'POST', `/v1/packs/${pack.id}/scans`, { barcode, symbology: 'ean13' });
 const confirm = (t: string, pack: any, scanId: string, actionId: string = randomUUID()) =>
   call(t, 'POST', `/v1/packs/${pack.id}/confirm`, { scanId, actionId, version: pack.version });
+const confirmManual = (t: string, pack: any, lineId: string, actionId: string = randomUUID()) =>
+  call(t, 'POST', `/v1/packs/${pack.id}/confirm`, { lineId, actionId, version: pack.version });
+
+async function confirmManualLines(t: string, pack: any): Promise<any> {
+  let current = pack;
+  for (;;) {
+    const line = current.lines.find((l: any) => l.verification?.method === 'manual' && (l.remaining > 0 || l.uncertain > 0));
+    if (!line) return current;
+    const res = await confirmManual(t, current, line.lineId);
+    assert.equal(res.status, 200, res.json.error?.message ?? JSON.stringify(res.json));
+    current = res.json;
+  }
+}
 const act = (t: string, pack: any, name: string) => call(t, 'POST', `/v1/packs/${pack.id}/${name}`, { actionId: randomUUID(), version: pack.version });
 const resolve = (t: string, pack: any, id: string, resolution: string) =>
   call(t, 'POST', `/v1/packs/${pack.id}/discrepancies/${id}/resolve`, { resolution, actionId: randomUUID(), version: pack.version });
@@ -117,7 +130,9 @@ describe('2. identity', () => {
     assert.equal(line.identity.status, 'unresolved');
     assert.equal(line.identity.ficName, null);
     assert.equal(line.identity.codice, null);
-    assert.ok(codes(p).includes('identity_unresolved'));
+    assert.equal(line.verification.method, 'manual');
+    assert.equal(line.canManualConfirm, true);
+    assert.ok(!codes(p).includes('identity_unresolved'));
   });
   test('without an FIC catalog no line resolves and completion is blocked', async () => {
     db.exec('DELETE FROM products');
@@ -186,6 +201,8 @@ describe('4. wrong product and excess', () => {
     assert.equal(s.json.scan.discrepancyId, null);
     assert.deepEqual(s.json.pack.discrepancies, []);
     p = await packUnits(ana, p, [MS001, MS001, MS001, MS024]);
+    assert.equal(p.canComplete, false);
+    p = await confirmManualLines(ana, p);
     assert.deepEqual(codes(p), []);
     assert.equal(p.canComplete, true);
   });
@@ -248,24 +265,30 @@ describe('restart from 0', () => {
 });
 
 describe('5. missing units and nonphysical rows', () => {
-  test('one missing free sample blocks completion; the shipping row needs no scan', async () => {
+  test('one missing free sample blocks completion; shipping is a normal barcodeless line', async () => {
     let p = await open(ana, 'f2');
-    assert.deepEqual(p.nonPhysical, [{ title: 'Standard', reason: 'Spedizione' }]);
+    const ship = p.lines.find((l: any) => l.lineId === 'f2-ship');
+    assert.equal(ship.verification.method, 'manual');
+    assert.deepEqual(p.nonPhysical, []);
     p = await packUnit(ana, p, MS002);
-    assert.deepEqual(codes(p), ['units_missing']);
-    assert.match(p.blockers[0].message, /MS040: ne mancano 1 su 1/);
+    assert.ok(codes(p).includes('units_missing'));
     p = await packUnit(ana, p, MS040);
+    assert.equal(p.canComplete, false);
+    p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
     p = (await act(ana, p, 'complete')).json;
     assert.equal(p.status, 'completed');
   });
-  test('a row of uncertain classification blocks rather than disappearing', async () => {
+  test('a row of uncertain classification stays on the order and is confirmed by hand when it has no barcode', async () => {
     let p = await open(ana, 'f5');
     p = await packUnit(ana, p, MS002);
-    assert.ok(codes(p).includes('classification_uncertain'));
+    const gift = p.lines.find((l: any) => l.lineId === 'f5-b');
+    assert.equal(gift.verification.method, 'manual');
     assert.equal(p.canComplete, false);
+    p = (await confirmManual(ana, p, 'f5-b')).json;
+    assert.equal(p.canComplete, true);
   });
-  test('Shopify rows: shipping is nonphysical, a free item stays physical, no-shipping rows stay uncertain', () => {
+  test('Shopify rows: shipping is a normal line, a free item stays physical, no-shipping rows stay uncertain', () => {
     const node: ShopifyOrderNode = {
       id: 'o', name: '#1', createdAt: 'c', updatedAt: 'u', cancelledAt: null, closed: false, displayFinancialStatus: 'PAID',
       lineItems: { nodes: [
@@ -278,7 +301,10 @@ describe('5. missing units and nonphysical rows', () => {
     const o = normalizeOrder(node);
     assert.equal(o.lines.find((l) => l.lineId === 'a')?.kind, 'physical');
     assert.equal(o.lines.find((l) => l.lineId === 'b')?.kind, 'uncertain');
-    assert.deepEqual(o.nonPhysical, [{ title: 'Express', reason: 'Spedizione' }]);
+    const ship = o.lines.find((l) => l.title === 'Express');
+    assert.equal(ship?.kind, 'physical');
+    assert.equal(ship?.sku, null);
+    assert.deepEqual(o.nonPhysical, []);
   });
 });
 
@@ -391,8 +417,12 @@ describe('v1 session and counting rules', () => {
   });
 
   test('an order with a line that can never be verified can be emptied and left', async () => {
-    let p = await open(ana, 'f3');
-    p = await packUnit(ana, p, MS001);
+    fixture.orders[1].lines.push({
+      lineId: 'f2-ghost', sku: 'MS999', title: 'Articolo sconosciuto', variantTitle: null, required: 1, kind: 'physical', kindReason: null,
+    });
+    await refresh(ana);
+    let p = await open(ana, 'f2');
+    p = await packUnit(ana, p, MS002);
     assert.ok(codes(p).includes('identity_unresolved'));
     assert.equal(p.canEmptyAndLeave, true);
     assert.equal((await act(ana, p, 'release')).status, 200);
@@ -433,6 +463,8 @@ describe('v1 session and counting rules', () => {
     assert.equal(line().state, 'done');
     assert.equal(p.canComplete, false);
     p = await packUnit(ana, p, MS024);
+    assert.equal(p.canComplete, false);
+    p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
   });
 
@@ -452,6 +484,7 @@ describe('v1 session and counting rules', () => {
   test('an extra unit names the product and does not change the list count', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
     const s = await scan(ana, p, MS002);
     assert.equal(s.json.scan.outcome, 'excess');
@@ -466,6 +499,7 @@ describe('8. changes and conflicting work', () => {
   test('a second operator cannot write, and takeover turns credit into recheck', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     const seen = await open(ben, 'f2');
     assert.equal(seen.isOwner, false);
     assert.equal((await scan(ben, seen, MS002)).status, 403);
@@ -477,6 +511,7 @@ describe('8. changes and conflicting work', () => {
     assert.ok(codes(taken).includes('units_uncertain'));
     assert.equal((await scan(ana, taken, MS002)).status, 403);
     taken = await packUnits(ben, taken, [MS002, MS040]);
+    taken = await confirmManualLines(ben, taken);
     assert.equal(taken.lines[0].verified, 1);
     assert.equal(taken.lines[0].units.length, 1);
     assert.equal(taken.canComplete, true);
@@ -484,6 +519,7 @@ describe('8. changes and conflicting work', () => {
   test('reduced quantity withdraws credit and demands the unit comes out', async () => {
     let p = await open(ana, 'f1');
     p = await packUnits(ana, p, [MS001, MS001, MS001, MS024]);
+    p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
     fixture.orders[0].lines[0].required = 2;
     await refresh(ana);
@@ -511,6 +547,7 @@ describe('8. changes and conflicting work', () => {
   test('cancellation blocks completion, even with every unit verified', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     fixture.orders[1].eligible = false;
     fixture.orders[1].ineligibleReason = 'Cancelled at the source.';
     await refresh(ana);
@@ -521,6 +558,7 @@ describe('8. changes and conflicting work', () => {
   test('an order that leaves the open set is blocked, not silently certified', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     fixture.orders.splice(1, 1);
     await refresh(ana);
     p = (await call(ana, 'GET', `/v1/packs/${p.id}`)).json;
@@ -529,6 +567,7 @@ describe('8. changes and conflicting work', () => {
   test('a packed order that changes later is flagged and can be reopened', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     p = (await act(ana, p, 'complete')).json;
     fixture.orders[1].lines[0].required = 2;
     await refresh(ana);
@@ -595,6 +634,7 @@ describe('10. source failure and freshness', () => {
   test('work is preserved in an outage but stale data cannot complete', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     fixture.failing = true;
     await refresh(ana);
     p = (await call(ana, 'GET', `/v1/packs/${p.id}`)).json;
@@ -617,6 +657,7 @@ describe('11. read-only sources', () => {
   test('completion calls no source, and adapter documents are queries, not mutations', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     const before = globalThis.fetch;
     let calls = 0;
     globalThis.fetch = (async () => { calls++; throw new Error('unexpected_network'); }) as typeof fetch;
@@ -663,6 +704,83 @@ describe('Shopify eligibility', () => {
   });
 });
 
+describe('manual confirm for barcodeless lines', () => {
+  test('a barcodeless line can be confirmed by hand, one unit at a time', async () => {
+    let p = await open(ana, 'f3');
+    const promo = p.lines.find((l: any) => l.lineId === 'f3-promo');
+    assert.equal(promo.verification.method, 'manual');
+    assert.equal(promo.canManualConfirm, true);
+    assert.equal(promo.required, 2);
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f3-promo').verified, 1);
+    assert.equal(p.canComplete, false);
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f3-promo').verified, 2);
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f3-promo').canManualConfirm, false);
+  });
+
+  test('a barcoded line cannot use the manual confirm path', async () => {
+    const p = await open(ana, 'f1');
+    const soap = p.lines.find((l: any) => l.identity.codice === 'MS001');
+    assert.equal(soap.verification.method, 'barcode');
+    assert.equal(soap.canManualConfirm, false);
+    const res = await confirmManual(ana, p, soap.lineId);
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error.code, 'scan_required');
+    assert.equal(res.json.pack.lines.find((l: any) => l.lineId === soap.lineId).verified, 0);
+  });
+
+  test('shipping is a normal barcodeless line, not a skip', async () => {
+    let p = await open(ana, 'f1');
+    const ship = p.lines.find((l: any) => l.lineId === 'f1-ship');
+    assert.equal(ship.identity.sourceTitle, 'Express');
+    assert.equal(ship.verification.method, 'manual');
+    assert.equal(ship.canManualConfirm, true);
+    assert.deepEqual(p.nonPhysical, []);
+    p = (await confirmManual(ana, p, 'f1-ship')).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-ship').verified, 1);
+    assert.equal(p.canComplete, false);
+  });
+
+  test('the order cannot be finished until barcodeless units are confirmed', async () => {
+    let p = await open(ana, 'f3');
+    p = await packUnit(ana, p, MS001);
+    assert.equal(p.canComplete, false);
+    assert.equal((await act(ana, p, 'complete')).json.error.code, 'completion_blocked');
+    p = (await confirmManual(ana, p, 'f3-a')).json;
+    assert.equal(p.canComplete, false);
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    assert.equal(p.canComplete, true);
+  });
+
+  test('a counted barcodeless unit can be taken back', async () => {
+    let p = await open(ana, 'f3');
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    p = (await confirmManual(ana, p, 'f3-promo')).json;
+    const line = p.lines.find((l: any) => l.lineId === 'f3-promo');
+    assert.equal(line.verified, 2);
+    const unitId = line.units[line.units.length - 1].id;
+    const removed = await call(ana, 'POST', `/v1/packs/${p.id}/units/${unitId}/remove`, { reason: 'miscounted', actionId: randomUUID(), version: p.version });
+    assert.equal(removed.status, 200);
+    p = removed.json;
+    const after = p.lines.find((l: any) => l.lineId === 'f3-promo');
+    assert.equal(after.verified, 1);
+    assert.equal(after.canManualConfirm, true);
+    assert.equal(p.canComplete, false);
+  });
+
+  test('a retried manual confirm with the same action id does not double count', async () => {
+    const p = await open(ana, 'f3');
+    const id = randomUUID();
+    const first = await confirmManual(ana, p, 'f3-a', id);
+    assert.equal(first.status, 200);
+    const retry = await confirmManual(ana, first.json, 'f3-a', id);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.json.lines.find((l: any) => l.lineId === 'f3-a').verified, 1);
+  });
+});
+
 describe('web dashboard', () => {
   test('the completed-orders feed needs a session and lists only packed orders, read-only', async () => {
     assert.equal((await call(null, 'GET', '/v1/admin/completed')).status, 401);
@@ -670,6 +788,7 @@ describe('web dashboard', () => {
 
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
     clock += 60_000;
     p = (await act(ana, p, 'complete')).json;
     assert.equal(p.status, 'completed');
@@ -683,7 +802,7 @@ describe('web dashboard', () => {
     assert.equal(res.json.orders.length, 1);
     const [o] = res.json.orders;
     assert.equal(o.completedByName, 'Ana');
-    assert.equal(o.units, 2);
+    assert.equal(o.units, 3);
     assert.equal(o.completedAt, clock);
     assert.equal(o.recipient, 'Cliente di prova');
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM packs ORDER BY id').all()), before);
