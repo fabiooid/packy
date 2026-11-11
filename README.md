@@ -1,3 +1,5 @@
+<img src="ios/Packy/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="Packy" width="96">
+
 # Packy
 
 Open-source iPhone packing check. It helps the person packing a parcel confirm the physical contents match the current order before recording it as packed. Packy is order-source agnostic: connect your own order sources and product catalog, and use it with your own orders. It never ships, fulfills, or writes to any source. It is released under the MIT license.
