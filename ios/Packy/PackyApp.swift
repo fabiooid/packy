@@ -103,7 +103,7 @@ struct LoginView: View {
                 .foregroundStyle(Theme.ink)
                 .padding(.horizontal, 16)
                 .frame(height: 54)
-                .card(border: Theme.line, width: 1.5, radius: 14)
+                .card(border: Theme.border, width: 1.5, radius: 14)
         }
     }
 }
