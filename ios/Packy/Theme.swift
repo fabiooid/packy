@@ -1,25 +1,37 @@
 import SwiftUI
 
-/// The "calm workbench" look: warm ground, white cards, one indigo accent for actions.
-/// Status colours also differ in lightness so they never rely on hue alone.
+/// Packy's colours come from the AppIcon: the royal-blue field, the carton faces,
+/// and the cream and gold interior. Semantic colours exist only where the packing
+/// flow already needs them (success, error, disabled). One token per role.
 enum Theme {
-    static let ground = Color(hex: 0xF4F3EF)
-    static let card = Color.white
-    static let border = Color(hex: 0xE4E2DC)
-    static let divider = Color(hex: 0xEEEDE8)
-    static let track = Color(hex: 0xDCDAD3)
-    static let ink = Color(hex: 0x16181D)
-    static let body = Color(hex: 0x3A3D44)
-    static let secondary = Color(hex: 0x5C6068)
-    static let night = Color(hex: 0x0F1115)
+    /// Field top of the icon, RGB(66, 81, 228). Also the carton's sunlit faces.
+    static let brand = Color(hex: 0x4251E4)
+    /// Field bottom of the icon, RGB(32, 31, 144).
+    static let brandDeep = Color(hex: 0x201F90)
+    /// Cream interior of the open carton.
+    static let cream = Color(hex: 0xFDEED1)
+    /// Gold interior flap of the open carton.
+    static let gold = Color(hex: 0xE9BC79)
 
-    static let accent = Color(hex: 0x3B4BDB)
-    static let accentSoft = Color(hex: 0xE6E8FB)
+    static let ground = cream
+    static let card = Color.white
+    /// One warm line, mixed from cream toward ink. Borders, dividers, and empty tracks.
+    static let line = Color(hex: 0xE6D8BF)
+    static let border = line
+    static let divider = line
+    static let track = line
+
+    static let ink = Color(hex: 0x16181D)
+    static let secondary = Color(hex: 0x5C6068)
+    static let body = ink
+    static let night = ink
+
+    static let accent = brand
     static let success = Color(hex: 0x0B7A47)
-    static let successInk = Color(hex: 0x0B6B3E)
     static let successSoft = Color(hex: 0xE3F3EA)
-    static let warning = Color(hex: 0x8A4500)
-    static let warningSoft = Color(hex: 0xFDEFD9)
+    /// Darkened gold, for warning text on cream or gold.
+    static let warning = Color(hex: 0x6E4912)
+    static let warningSoft = gold
     static let danger = Color(hex: 0xC1232B)
     static let dangerSoft = Color(hex: 0xFBE4E5)
 
@@ -53,7 +65,7 @@ extension View {
 
 struct Chip: View {
     let text: String
-    var foreground: Color = Theme.successInk
+    var foreground: Color = Theme.success
     var background: Color = Theme.successSoft
 
     var body: some View {
@@ -84,13 +96,14 @@ struct SizeBadge: View {
 
 struct PrimaryButtonStyle: ButtonStyle {
     var color: Color = Theme.accent
+    var foreground: Color = .white
     var height: CGFloat = 56
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(isEnabled ? .white : Color(hex: 0x4A4D55))
+            .foregroundStyle(isEnabled ? foreground : Theme.secondary)
             .frame(maxWidth: .infinity, minHeight: height)
             .background(isEnabled ? color : Theme.track, in: RoundedRectangle(cornerRadius: 16))
             .opacity(configuration.isPressed ? 0.85 : 1)
