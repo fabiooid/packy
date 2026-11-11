@@ -25,12 +25,6 @@ function productLabel(codice: string | null | undefined, name: string | null | u
   return fallback;
 }
 
-function stillNeeded(view: PackView): string {
-  return view.lines
-    .filter((l) => l.remaining > 0 || l.uncertain > 0 || l.state === 'blocked')
-    .map((l) => productLabel(l.identity.codice, l.identity.ficName, l.identity.sourceTitle))
-    .join(', ');
-}
 
 const RESOLUTIONS: Record<string, string[]> = {
   wrong_product: ['set_aside', 'never_in_box'],
@@ -65,6 +59,8 @@ export interface LineView {
   verification: Verification | null;
   units: { id: string; status: string; confirmedAt: number; confirmedBy: string }[];
   canManualConfirm: boolean;
+  /** Shipping row: confirmed by hand, never counted as a piece. */
+  isShipping: boolean;
 }
 
 export interface Blocker { code: string; message: string; lineId?: string }
@@ -190,6 +186,7 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
       lineId: line.lineId, kind: line.kind, kindReason: line.kindReason, required: line.required, verified, uncertain, remaining, state, identity, verification,
       units: own.map((u) => ({ id: u.id, status: u.status, confirmedAt: u.confirmed_at, confirmedBy: userName(db, u.confirmed_by) })),
       canManualConfirm,
+      isShipping: line.shipping === true,
     };
   });
 
@@ -349,7 +346,6 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
     // When the packer has chosen a product, a read only matches that line. Anything else is wrong.
     const selected = selectedLineId ? view.lines.find((l) => l.lineId === selectedLineId) ?? null : null;
     if (selectedLineId && !selected) throw new ApiError(400, 'bad_line', 'Il prodotto scelto non è in questo ordine.', { pack: view });
-    const needed = stillNeeded(view);
     const lookup = lookupBarcode(ctx.db, barcode);
 
     if (lookup.status === 'unknown') {
@@ -366,11 +362,8 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
       const label = `${codice} ${name ?? '(non nel catalogo FIC)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
-        message = selected
-          ? `Prodotto sbagliato. Non contato. Stai scansionando ${productLabel(selected.identity.codice, selected.identity.ficName, selected.identity.sourceTitle)}.`
-          : needed
-          ? `Prodotto sbagliato. Non contato. A questo ordine manca ancora ${needed}.`
-          : `Prodotto sbagliato. Non contato. ${productLabel(codice, name)} non è in questo ordine.`;
+        // Say only what was read. Suggesting the right product invites a second wrong pick.
+        message = `Prodotto sbagliato. Non contato. Hai letto ${productLabel(codice, name)}.`;
       } else if (matching.every((l) => l.state === 'blocked')) {
         outcome = 'line_blocked';
         message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'Questa riga non si può ancora verificare.';
@@ -607,9 +600,9 @@ export function workload(ctx: Ctx, user: User): WorkloadView {
     const blockedLines = lines.filter((l) => classifyLine(db, l, ctx.policies).blocked).length;
     return {
       source: o.source, orderId: o.order_id, reference: o.reference, recipient: o.recipient, createdAt: o.created_at,
-      eligible: Boolean(o.eligible), ineligibleReason: o.ineligible_reason, units: lines.reduce((s, l) => s + l.required, 0),
+      eligible: Boolean(o.eligible), ineligibleReason: o.ineligible_reason, units: lines.reduce((s, l) => s + (l.shipping ? 0 : l.required), 0),
       packId: pack?.id ?? null, packStatus: pack?.status ?? null, ownerName: view?.ownerName ?? null, isOwner: view?.isOwner ?? false,
-      verified: view?.lines.reduce((s, l) => s + l.verified, 0) ?? 0, changedAfterCompletion: view?.changedAfterCompletion ?? false,
+      verified: view?.lines.reduce((s, l) => s + (l.isShipping ? 0 : l.verified), 0) ?? 0, changedAfterCompletion: view?.changedAfterCompletion ?? false,
       blockedLines, freshness: freshness(ctx, o),
     };
   });
@@ -622,6 +615,8 @@ export function workload(ctx: Ctx, user: User): WorkloadView {
 
 export interface CompletedOrder {
   completedAt: number; source: string; reference: string; recipient: string | null; completedByName: string; units: number;
+  /** Pieces confirmed by hand because the product has no barcode. */
+  manualUnits: number;
 }
 
 /** Read-only activity feed for the web dashboard: orders packed in the last `days` days, newest first. */
@@ -629,13 +624,19 @@ export function completedOrders(ctx: Ctx, days = 30, limit = 500): { fixture: bo
   const since = ctx.now() - days * 24 * 60 * 60_000;
   const rows = ctx.db.prepare(`
     SELECT p.completed_at AS completedAt, p.source AS source, COALESCE(o.reference, p.order_id) AS reference, o.recipient AS recipient,
-      u.display_name AS completedByName,
-      (SELECT COUNT(*) FROM units x WHERE x.pack_id = p.id AND x.status != 'removed') AS units
+      u.display_name AS completedByName, p.id AS packId, p.accepted_lines AS acceptedLines
     FROM packs p
     JOIN users u ON u.id = p.completed_by
     LEFT JOIN orders o ON o.source = p.source AND o.order_id = p.order_id
     WHERE p.status = 'completed' AND p.completed_at >= ?
-    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as CompletedOrder[];
+    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as (Omit<CompletedOrder, 'units' | 'manualUnits'> & { packId: string; acceptedLines: string })[];
+  const unitsOf = ctx.db.prepare(`SELECT line_id AS lineId, barcode FROM units WHERE pack_id = ? AND status != 'removed'`);
   const total = (ctx.db.prepare(`SELECT COUNT(*) AS n FROM packs WHERE status = 'completed'`).get() as { n: number }).n;
-  return { fixture: ctx.sources.fixture, since, total, orders: rows.map((r) => ({ ...r })) };
+  const orders = rows.map(({ packId, acceptedLines, ...r }) => {
+    // Pieces only: shipping rows are confirmed by hand but are not in the box.
+    const shippingIds = new Set((JSON.parse(acceptedLines) as SourceLine[]).filter((l) => l.shipping).map((l) => l.lineId));
+    const pieces = (unitsOf.all(packId) as { lineId: string; barcode: string }[]).filter((u) => !shippingIds.has(u.lineId));
+    return { ...r, units: pieces.length, manualUnits: pieces.filter((u) => u.barcode === '').length };
+  });
+  return { fixture: ctx.sources.fixture, since, total, orders };
 }
