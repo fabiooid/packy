@@ -19,7 +19,6 @@ enum PackingFlow {
     static let rightProduct = "Prodotto giusto. Non ancora contato."
     static let countAction = "Aggiungi"
     static let markDoneConfirm = "Confermi che la scatola corrisponde all'ordine. Non lo spedisce."
-    static let typeNotBottle = "Questo codice identifica il tipo di prodotto, non il singolo pezzo."
     static let wrongProductTitle = "Prodotto sbagliato. Non contato."
 
     static func countLabel(verified: Int, required: Int) -> String {
