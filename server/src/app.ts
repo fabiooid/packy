@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { ADMIN_CSP, ADMIN_HTML, ADMIN_JS } from './admin-page.ts';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { authenticate, login, logout } from './auth.ts';
 import * as packing from './pack.ts';
@@ -28,6 +29,11 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
+  // Read-only web dashboard. The page itself holds no data; it signs in and reads /v1/admin/completed.
+  const adminHeaders = { 'content-security-policy': ADMIN_CSP, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' };
+  app.get('/admin', (c) => c.html(ADMIN_HTML, 200, adminHeaders));
+  app.get('/admin/app.js', (c) => c.body(ADMIN_JS, 200, { ...adminHeaders, 'content-type': 'text/javascript; charset=utf-8' }));
+
   const body = async (c: { req: { json: () => Promise<unknown> } }) => {
     const value = await c.req.json().catch(() => null);
     if (typeof value !== 'object' || value === null) throw new ApiError(400, 'bad_json', 'La richiesta non è valida.');
@@ -55,6 +61,10 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     return c.json({ ok: true });
   });
 
+  app.get('/v1/admin/completed', (c) => {
+    c.header('cache-control', 'no-store');
+    return c.json(packing.completedOrders(ctx));
+  });
   app.get('/v1/workload', (c) => c.json(packing.workload(ctx, c.get('user'))));
   app.post('/v1/refresh', async (c) => {
     await refresh();

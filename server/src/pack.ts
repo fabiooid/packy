@@ -567,3 +567,23 @@ export function workload(ctx: Ctx, user: User): WorkloadView {
     orders,
   };
 }
+
+export interface CompletedOrder {
+  completedAt: number; source: string; reference: string; recipient: string | null; completedByName: string; units: number;
+}
+
+/** Read-only activity feed for the web dashboard: orders packed in the last `days` days, newest first. */
+export function completedOrders(ctx: Ctx, days = 30, limit = 500): { fixture: boolean; since: number; total: number; orders: CompletedOrder[] } {
+  const since = ctx.now() - days * 24 * 60 * 60_000;
+  const rows = ctx.db.prepare(`
+    SELECT p.completed_at AS completedAt, p.source AS source, COALESCE(o.reference, p.order_id) AS reference, o.recipient AS recipient,
+      u.display_name AS completedByName,
+      (SELECT COUNT(*) FROM units x WHERE x.pack_id = p.id AND x.status != 'removed') AS units
+    FROM packs p
+    JOIN users u ON u.id = p.completed_by
+    LEFT JOIN orders o ON o.source = p.source AND o.order_id = p.order_id
+    WHERE p.status = 'completed' AND p.completed_at >= ?
+    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as CompletedOrder[];
+  const total = (ctx.db.prepare(`SELECT COUNT(*) AS n FROM packs WHERE status = 'completed'`).get() as { n: number }).n;
+  return { fixture: ctx.sources.fixture, since, total, orders: rows.map((r) => ({ ...r })) };
+}
