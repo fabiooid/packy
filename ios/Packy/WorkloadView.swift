@@ -65,10 +65,23 @@ struct WorkloadView: View {
                     .foregroundStyle(Theme.secondary)
                 Text(PackingFlow.listHeading).font(Theme.display(34)).foregroundStyle(Theme.ink)
             }
-            Spacer()
+            Spacer(minLength: 8)
+            Button {
+                Task { await model.refresh() }
+            } label: {
+                Label("Aggiorna ordini", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Aggiorna ordini")
             Menu {
-                Button("Aggiorna ordini") { Task { await model.refresh() } }
-                Button("Esci dall'account", role: .destructive) { Task { await model.logout() } }
+                Button("Esci dall'account", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                    Task { await model.logout() }
+                }
             } label: {
                 Circle().fill(Theme.ink).frame(width: 44, height: 44)
                     .overlay(Image(systemName: "person.fill").foregroundStyle(.white))
