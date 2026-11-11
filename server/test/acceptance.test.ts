@@ -165,7 +165,7 @@ describe('3 and 6. units, detection, repeated reads', () => {
     assert.equal(retry.json.lines[0].verified, 1);
   });
   test('every view states that codes cannot prove distinct bottles', async () => {
-    assert.match((await open(ana, 'f1')).limitsNote, /product type, not an individual bottle/);
+    assert.match((await open(ana, 'f1')).limitsNote, /product type, not a single bottle/);
   });
 });
 
@@ -174,7 +174,11 @@ describe('4. wrong product and excess', () => {
     let p = await open(ana, 'f1');
     const s = await scan(ana, p, MS002);
     assert.equal(s.json.scan.outcome, 'wrong_product');
-    assert.match(s.json.scan.message, /MS002 Cardamomo Sapone Mani 500ml/);
+    assert.equal(s.json.scan.codice, 'MS002');
+    assert.equal(s.json.scan.productName, 'Cardamomo Sapone Mani 500ml');
+    assert.match(s.json.scan.message, /Wrong product\. Not counted/);
+    assert.match(s.json.scan.message, /still needs Cardamomo Sapone Mani 250ml \(MS001\)/);
+    assert.equal(s.json.pack.lines[0].verified, 0);
     assert.equal(s.json.scan.id.length > 0, true);
     const offer = await confirm(ana, s.json.pack, s.json.scan.id);
     assert.equal(offer.json.error.code, 'scan_not_eligible');
@@ -273,6 +277,108 @@ describe('7. interruption and corrections', () => {
     p = (await call(ana, 'POST', `/v1/packs/${p.id}/units/${unit.id}/remove`, { reason: 'damaged', actionId: randomUUID(), version: p.version })).json;
     assert.equal(p.lines[0].verified, 0);
     assert.equal(p.lines[0].remaining, 1);
+  });
+});
+
+describe('v1 session and counting rules', () => {
+  test('leave with zero counts returns the order to ready, including after a read that was not counted', async () => {
+    let p = await open(ana, 'f1');
+    assert.equal(p.hasRecordedCount, false);
+    assert.equal(p.canLeave, true);
+    const unread = await scan(ana, p, MS001);
+    assert.equal(unread.json.scan.outcome, 'eligible');
+    assert.equal(unread.json.pack.lines[0].verified, 0);
+    assert.equal(unread.json.pack.hasRecordedCount, false);
+    assert.equal(unread.json.pack.canLeave, true);
+    assert.equal((await act(ana, unread.json.pack, 'release')).status, 200);
+    const again = await open(ana, 'f1');
+    assert.notEqual(again.id, p.id);
+    assert.equal(again.lines[0].verified, 0);
+    assert.equal(again.status, 'active');
+    assert.equal((await act(ana, again, 'release')).status, 200);
+    const next = await open(ana, 'f2');
+    assert.equal(next.orderId, 'f2');
+  });
+
+  test('a recorded count locks the session until the order is packed', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    assert.equal(p.hasRecordedCount, true);
+    assert.equal(p.canLeave, false);
+    const leave = await act(ana, p, 'release');
+    assert.equal(leave.status, 409);
+    assert.equal(leave.json.error.code, 'session_locked');
+    assert.equal(leave.json.pack.lines[0].verified, 1);
+    const blocked = await call(ana, 'POST', '/v1/packs', { source: 'fixture', orderId: 'f2' });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.json.error.code, 'order_already_open');
+    const resumed = await open(ana, 'f1');
+    assert.equal(resumed.id, p.id);
+    assert.equal(resumed.lines[0].verified, 1);
+  });
+
+  test('scans in any order track the matching line without counting until confirm', async () => {
+    let p = await open(ana, 'f1');
+    const candle = p.lines.find((l: any) => l.identity.codice === 'MS024');
+    const soap = p.lines.find((l: any) => l.identity.codice === 'MS001');
+    const s24 = await scan(ana, p, MS024);
+    assert.equal(s24.json.scan.outcome, 'eligible');
+    assert.equal(s24.json.scan.lineId, candle.lineId);
+    assert.equal(s24.json.pack.lines.find((l: any) => l.lineId === candle.lineId).verified, 0);
+    p = (await confirm(ana, s24.json.pack, s24.json.scan.id)).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === candle.lineId).verified, 1);
+    assert.equal(p.lines.find((l: any) => l.lineId === soap.lineId).verified, 0);
+    const s01 = await scan(ana, p, MS001);
+    assert.equal(s01.json.scan.lineId, soap.lineId);
+    p = (await confirm(ana, s01.json.pack, s01.json.scan.id)).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === soap.lineId).verified, 1);
+    assert.equal(p.canComplete, false);
+  });
+
+  test('quantity greater than one counts 1/3 then 2/3 then 3/3 and stays incomplete until full', async () => {
+    let p = await open(ana, 'f1');
+    const line = () => p.lines.find((l: any) => l.identity.codice === 'MS001');
+    assert.equal(line().verified, 0);
+    assert.equal(line().required, 3);
+    p = await packUnit(ana, p, MS001);
+    assert.equal(line().verified, 1);
+    assert.equal(line().state, 'partial');
+    assert.equal(p.canComplete, false);
+    p = await packUnit(ana, p, MS001);
+    assert.equal(line().verified, 2);
+    assert.equal(p.canComplete, false);
+    p = await packUnit(ana, p, MS001);
+    assert.equal(line().verified, 3);
+    assert.equal(line().state, 'done');
+    assert.equal(p.canComplete, false);
+    p = await packUnit(ana, p, MS024);
+    assert.equal(p.canComplete, true);
+  });
+
+  test('a missing unit stays visible as an incomplete line and keeps done locked', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnits(ana, p, [MS001, MS001, MS024]);
+    const soap = p.lines.find((l: any) => l.identity.codice === 'MS001');
+    assert.equal(soap.verified, 2);
+    assert.equal(soap.required, 3);
+    assert.equal(soap.remaining, 1);
+    assert.equal(soap.state, 'partial');
+    assert.ok(codes(p).includes('units_missing'));
+    assert.equal(p.canComplete, false);
+    assert.equal((await act(ana, p, 'complete')).json.error.code, 'completion_blocked');
+  });
+
+  test('an extra unit names the product, does not change the list count, and keeps done locked', async () => {
+    let p = await open(ana, 'f2');
+    p = await packUnits(ana, p, [MS002, MS040]);
+    assert.equal(p.canComplete, true);
+    const s = await scan(ana, p, MS002);
+    assert.equal(s.json.scan.outcome, 'excess');
+    assert.match(s.json.scan.message, /Cardamomo Sapone Mani 500ml \(MS002\)/);
+    assert.match(s.json.scan.message, /Not counted/);
+    assert.equal(s.json.pack.lines[0].verified, 1);
+    assert.equal(s.json.pack.canComplete, false);
+    assert.ok(codes(s.json.pack).includes('discrepancy_open'));
   });
 });
 
