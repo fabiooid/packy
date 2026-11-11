@@ -8,6 +8,8 @@ final class AppModel {
     let api = APIClient()
     var signedIn = false
     var workload: Workload?
+    /// Orders packed in the last 30 days, newest first. Empty until the first refresh.
+    var packed: [PackedOrder] = []
     var loadState: LoadState = .idle
     var loginError: String?
 
@@ -50,11 +52,13 @@ final class AppModel {
         loadState = .loading
         do {
             workload = try await api.send("POST", "v1/refresh", body: [:])
+            // The packed list is secondary: if it fails, the orders to pack still show.
+            if let list: PackedList = try? await api.send("GET", "v1/packed") { packed = list.orders }
             loadState = .idle
         } catch APIFailure.signedOut {
             signOutLocally()
         } catch {
-            loadState = .failed("Packy non raggiunge il server. Non significa che non ci siano ordini: non si sa finché non si collega.")
+            loadState = .failed("Potrebbero esserci ordini che non vedi. Riprova quando torna la connessione.")
         }
     }
 

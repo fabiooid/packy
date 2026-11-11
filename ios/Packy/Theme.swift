@@ -149,12 +149,42 @@ struct ProgressBar: View {
 
 struct FixtureBanner: View {
     var body: some View {
-        Label(PackingFlow.sampleMode, systemImage: "testtube.2")
-            .font(.subheadline.weight(.semibold))
+        Label(PackingFlow.sampleModeShort, systemImage: "testtube.2")
+            .font(.caption.weight(.semibold))
             .foregroundStyle(Theme.warning)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Theme.warningSoft, in: Capsule())
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Theme.warningSoft, in: RoundedRectangle(cornerRadius: 16))
+            .accessibilityLabel(PackingFlow.sampleMode)
+    }
+}
+
+/// A compact notice: one bold line, and at most two lines of detail. Several can stack without pushing the work off screen.
+struct Notice: View {
+    let title: String
+    var detail: String?
+    var icon = "exclamationmark.circle.fill"
+    var color: Color = Theme.danger
+    var soft: Color = Theme.dangerSoft
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon).font(.footnote.weight(.semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.footnote.weight(.semibold))
+                if let detail {
+                    Text(detail).font(.caption).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(soft, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 }
 

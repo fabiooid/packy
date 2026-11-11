@@ -49,6 +49,23 @@ struct WorkloadOrder: Decodable, Identifiable {
     var id: String { source + orderId }
 }
 
+/// A finished order for the "Imballati" tab. Read-only.
+struct PackedOrder: Decodable, Identifiable {
+    let completedAt: Double
+    let source: String
+    let reference: String
+    let recipient: String?
+    let completedByName: String
+    let units: Int
+    var id: String { "\(source)|\(reference)|\(completedAt)" }
+    var date: Date { Date(timeIntervalSince1970: completedAt / 1000) }
+}
+
+struct PackedList: Decodable {
+    let total: Int
+    let orders: [PackedOrder]
+}
+
 struct Workload: Decodable {
     let fixture: Bool
     let sources: [SourceState]

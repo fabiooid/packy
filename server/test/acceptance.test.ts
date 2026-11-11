@@ -766,6 +766,19 @@ describe('manual confirm for barcodeless lines', () => {
     assert.equal(w.orders.find((o: any) => o.orderId === 'f1').units, 4);
   });
 
+  test('the app reads the same packed feed and it needs a session', async () => {
+    assert.equal((await call(null, 'GET', '/v1/packed')).status, 401);
+    let p = await open(ana, 'f2');
+    p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
+    p = (await act(ana, p, 'complete')).json;
+    const res = await call(ben, 'GET', '/v1/packed');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.orders.length, 1);
+    assert.equal(res.json.orders[0].reference, '#FIX-1002 free sample');
+    assert.equal(res.json.orders[0].completedByName, 'Ana');
+  });
+
   test('the dashboard reports pieces confirmed by hand', async () => {
     let p = await open(ana, 'f3');
     p = await packUnit(ana, p, MS001);

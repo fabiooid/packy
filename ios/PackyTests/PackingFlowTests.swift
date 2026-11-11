@@ -111,6 +111,28 @@ final class PackingFlowTests: XCTestCase {
         )
     }
 
+    func testSearchMatchesCustomerOrOrderNumber() {
+        XCTAssertTrue(PackingFlow.matches("", recipient: nil, reference: "#MS1668"))
+        XCTAssertTrue(PackingFlow.matches("marta", recipient: "Marta Bianchi", reference: "#MS1668"))
+        XCTAssertTrue(PackingFlow.matches("#1668", recipient: "Marta Bianchi", reference: "#MS1668"))
+        XCTAssertTrue(PackingFlow.matches("niccolo", recipient: "Niccolò Rè", reference: "#MS1"), "ignores accents")
+        XCTAssertFalse(PackingFlow.matches("luca", recipient: "Marta Bianchi", reference: "#MS1668"))
+    }
+
+    func testPackedOrdersGroupByDayNewestFirst() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Rome")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 12))!
+        func order(_ hoursAgo: Double, _ ref: String) -> PackedOrder {
+            PackedOrder(completedAt: (now.timeIntervalSince1970 - hoursAgo * 3600) * 1000, source: "s", reference: ref, recipient: nil, completedByName: "Ana", units: 1)
+        }
+        let groups = PackingFlow.packedGroups([order(30, "c"), order(1, "a"), order(2, "b"), order(60, "d")], now: now, calendar: cal)
+        XCTAssertEqual(groups.map(\.label).prefix(2), ["Oggi", "Ieri"])
+        XCTAssertEqual(groups[0].orders.map(\.reference), ["a", "b"])
+        XCTAssertEqual(groups[1].orders.map(\.reference), ["c"])
+        XCTAssertEqual(groups.count, 3)
+    }
+
     func testShippingIsConfirmedButNeverAPiece() {
         let soap = line(id: "a", method: "barcode", canManualConfirm: false, required: 3, verified: 2)
         let ship = line(id: "s", method: "manual", canManualConfirm: true, verified: 1, shipping: true)

@@ -8,19 +8,30 @@ struct WorkloadView: View {
     @State private var didResumeOnLaunch = false
     @State private var pendingNext: WorkloadOrder?
     @State private var cancelling: WorkloadOrder?
+    @State private var tab: ListTab = .toPack
+    @State private var query = ""
+
+    enum ListTab { case toPack, packed }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 12) {
                     header
                     if let workload = model.workload, workload.fixture { FixtureBanner() }
+                    // One notice at a time for the connection: an order that did not open is the same problem.
                     if case .failed(let message) = model.loadState {
-                        problem(message, icon: "wifi.exclamationmark")
+                        Notice(title: PackingFlow.serverUnreachable, detail: message, icon: "wifi.exclamationmark")
+                    } else if let openError {
+                        Notice(title: openError)
                     }
-                    if let openError { problem(openError, icon: "exclamationmark.circle.fill") }
                     if let workload = model.workload {
-                        content(workload)
+                        tabs(workload)
+                        searchField
+                        switch tab {
+                        case .toPack: content(workload)
+                        case .packed: packedList
+                        }
                     } else if case .loading = model.loadState {
                         ProgressView("Controllo ordini...").padding(.top, 40)
                     }
@@ -69,13 +80,21 @@ struct WorkloadView: View {
             Button {
                 Task { await model.refresh() }
             } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Group {
+                    if refreshing {
+                        ProgressView().tint(Theme.accent)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .background(Theme.accentSoft, in: Circle())
+                .contentShape(Circle())
             }
-            .accessibilityLabel("Aggiorna ordini")
+            .disabled(refreshing)
+            .accessibilityLabel(refreshing ? "Aggiornamento in corso" : "Aggiorna ordini")
             Menu {
                 Button("Esci dall'account", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                     Task { await model.logout() }
@@ -89,24 +108,52 @@ struct WorkloadView: View {
         .padding(.top, 12)
     }
 
+    private var refreshing: Bool {
+        if case .loading = model.loadState { return true }
+        return false
+    }
+
     @ViewBuilder private func content(_ workload: Workload) -> some View {
         let active = model.activeOwnedOrder()
-        let upNext = PackingFlow.packableOrders(workload.orders).filter { $0.id != active?.id }
+        let upNext = PackingFlow.packableOrders(workload.orders)
+            .filter { $0.id != active?.id && PackingFlow.matches(query, recipient: $0.recipient, reference: $0.reference) }
         let sourceFailed = PackingFlow.orderSourceFailed(workload.sources)
 
-        if sourceFailed { problem(PackingFlow.sourceFailed, icon: "wifi.exclamationmark") }
+        // The empty state says the same thing, so the notice shows only above a list.
+        if sourceFailed && !upNext.isEmpty {
+            Notice(title: "Una fonte non risponde", detail: "Potrebbero esserci ordini che non vedi.", icon: "wifi.exclamationmark")
+        }
 
         if let active { continueCard(active) }
 
         VStack(spacing: 8) {
             SectionLabel(active == nil ? "Ordini da imballare" : "Prossimi")
             if upNext.isEmpty {
-                Text(sourceFailed ? PackingFlow.sourceFailed : PackingFlow.emptyOrders)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .card()
+                VStack(spacing: 10) {
+                    // An emoji only when the list is truly empty: that is good news. A failed source keeps the plain icon.
+                    Group {
+                        if !query.isEmpty {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(Theme.secondary)
+                        } else if sourceFailed {
+                            Image(systemName: "wifi.exclamationmark")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(Theme.danger)
+                        } else {
+                            Text("☕️").font(.system(size: 34))
+                        }
+                    }
+                    .accessibilityHidden(true)
+                    Text(!query.isEmpty ? "Nessun ordine trovato." : sourceFailed ? PackingFlow.sourceFailed : PackingFlow.emptyOrders)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 28)
+                .card()
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(upNext.enumerated()), id: \.element.id) { index, order in
@@ -124,6 +171,93 @@ struct WorkloadView: View {
                         .foregroundStyle(Theme.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.leading, 4)
+                }
+            }
+        }
+    }
+
+    private func tabs(_ workload: Workload) -> some View {
+        let toPack = PackingFlow.packableOrders(workload.orders).count
+        return HStack(spacing: 4) {
+            tabButton("Da imballare", count: toPack, value: .toPack)
+            tabButton("Imballati", count: model.packed.count, value: .packed)
+        }
+        .padding(4)
+        .background(Color(hex: 0xE9E7E1), in: RoundedRectangle(cornerRadius: 13))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func tabButton(_ title: String, count: Int, value: ListTab) -> some View {
+        let on = tab == value
+        return Button {
+            withAnimation(.easeOut(duration: 0.15)) { tab = value }
+        } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text("\(count)")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 7).padding(.vertical, 1)
+                    .background(on ? Theme.accentSoft : Theme.track, in: Capsule())
+                    .foregroundStyle(on ? Theme.accent : Theme.secondary)
+            }
+            .foregroundStyle(on ? Theme.ink : Theme.secondary)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background(on ? Theme.card : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .shadow(color: on ? .black.opacity(0.1) : .clear, radius: 2, y: 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
+            TextField("", text: $query, prompt: Text("Cerca cliente o numero ordine").foregroundStyle(Theme.secondary))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .foregroundStyle(Theme.ink)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.track)
+                }
+                .accessibilityLabel("Cancella ricerca")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .card(radius: 12)
+    }
+
+    @ViewBuilder private var packedList: some View {
+        let found = model.packed.filter { PackingFlow.matches(query, recipient: $0.recipient, reference: $0.reference) }
+        if found.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: query.isEmpty ? "shippingbox" : "magnifyingglass")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                    .accessibilityHidden(true)
+                Text(query.isEmpty ? "Nessun ordine imballato negli ultimi 30 giorni." : "Nessun ordine trovato.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 28)
+            .card()
+        } else {
+            ForEach(PackingFlow.packedGroups(found), id: \.label) { group in
+                VStack(spacing: 8) {
+                    SectionLabel(group.label)
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.orders.enumerated()), id: \.element.id) { index, order in
+                            PackedRow(order: order)
+                            if index < group.orders.count - 1 { Divider().overlay(Theme.divider).padding(.leading, 58) }
+                        }
+                    }
+                    .card()
                 }
             }
         }
@@ -167,15 +301,6 @@ struct WorkloadView: View {
         .foregroundStyle(.white)
         .padding(18)
         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 24))
-    }
-
-    private func problem(_ text: String, icon: String) -> some View {
-        Label(text, systemImage: icon)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(Theme.danger)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func resumeActiveSession() {
@@ -246,6 +371,29 @@ struct TrailingIconLabel: LabelStyle {
     }
 }
 
+private struct PackedRow: View {
+    let order: PackedOrder
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle().fill(Theme.success).frame(width: 30, height: 30)
+                .overlay(Image(systemName: "checkmark").font(.caption.weight(.heavy)).foregroundStyle(.white))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(order.recipient ?? "Cliente senza nome").font(.headline).foregroundStyle(Theme.ink)
+                Text("\(order.reference) · \(order.units) \(PackingFlow.unitWord(order.units)) · \(order.date.formatted(date: .omitted, time: .shortened)) · \(order.completedByName)")
+                    .font(.footnote).foregroundStyle(Theme.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Imballato. \(order.recipient ?? "Cliente senza nome"), \(order.reference), \(order.units) \(PackingFlow.unitWord(order.units)), da \(order.completedByName)")
+    }
+}
+
 private struct OrderRow: View {
     let order: WorkloadOrder
 
@@ -257,7 +405,7 @@ private struct OrderRow: View {
                     .font(.footnote).foregroundStyle(Theme.secondary)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.secondary)
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.track)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
