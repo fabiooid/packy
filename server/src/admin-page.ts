@@ -3,7 +3,7 @@
 
 export const ADMIN_CSP = [
   "default-src 'none'", "script-src 'self'", "style-src 'unsafe-inline'", "connect-src 'self'",
-  "img-src data:", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+  "img-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
 ].join('; ');
 
 export const ADMIN_HTML = `<!doctype html>
@@ -13,6 +13,8 @@ export const ADMIN_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Packy · Ordini imballati</title>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/png" href="/admin/favicon.png" sizes="32x32">
 <style>
 :root { --ground:#F4F3EF; --card:#FFFFFF; --ink:#16181D; --muted:#5C6068; --line:#E4E2DC; --divider:#EEEDE8; --accent:#4251E4; --success:#0B7A47; --success-soft:#E3F3EA; --danger:#C1232B; --warn-bg:#FDEFD9; --warn:#8A4500; }
 * { box-sizing: border-box; }
@@ -29,6 +31,10 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { height: 48px; border: none; border-radius: 14px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 button.link { height: auto; background: none; color: var(--muted); padding: 8px 4px; }
 .error { color: var(--danger); font-size: 14px; min-height: 1em; }
+.mark { display: block; height: auto; }
+#login .mark { width: 72px; margin-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand .mark { width: 36px; flex: none; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .banner { background: var(--warn-bg); color: var(--warn); border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; font-weight: 600; font-size: 14px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
@@ -64,6 +70,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 <main>
   <form id="login" class="card" hidden>
     <div>
+      <img class="mark" src="/admin/logo.png" alt="Packy" width="72" height="65">
       <h1>Packy</h1>
       <p class="muted" style="margin:4px 0 0">Ordini imballati. Accedi con lo stesso account dell'app.</p>
     </div>
@@ -75,9 +82,12 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 
   <section id="dash" hidden>
     <header>
-      <div>
-        <h1>Ordini imballati</h1>
-        <div class="muted" id="updated"></div>
+      <div class="brand">
+        <img class="mark" src="/admin/logo.png" alt="Packy" width="36" height="32">
+        <div>
+          <h1>Ordini imballati</h1>
+          <div class="muted" id="updated"></div>
+        </div>
       </div>
       <button id="logout" class="link" type="button">Esci</button>
     </header>
