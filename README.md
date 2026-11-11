@@ -1,12 +1,12 @@
 # Packy
 
-Internal iPhone packing check for Manisante. It helps the person packing a parcel confirm the physical contents match the current order before recording it as packed. Packy never ships, fulfills, or writes to any source.
+Open-source iPhone packing check. It helps the person packing a parcel confirm the physical contents match the current order before recording it as packed. Connect it to your own order sources and product catalog; anyone can use it with their own orders. Packy never ships, fulfills, or writes to any source. It is released under the MIT license.
 
 - `ios/`: native SwiftUI app. Reads barcodes with the camera and shows what is verified, what remains, and why.
 - `server/`: thin Node service. Owns sign in, integration tokens, source adapters, and every packing rule.
 - `data/barcode-map.json`: barcode to FIC Codice map with provenance and coverage gaps.
 - `data/policies.json`: products that stay blocked until a policy is approved.
-- `docs/HANDOFF.md`: rationale, status, decisions needed, and test evidence. Start there.
+- `docs/HANDOFF.md`: implementation notes, status, and test evidence.
 
 ## Run locally with fixture data
 
@@ -47,21 +47,12 @@ cd ios && xcodebuild -project Packy.xcodeproj -scheme Packy -destination 'platfo
 The repo includes a `Dockerfile` and `railway.json`. The image has not been built yet, because Docker is not installed on the build machine.
 
 1. Create a Railway service from this folder and attach a volume at `/data`.
-2. Set the variables below as Railway variables. Never commit them.
+2. Set your order-source, catalog, and database variables as Railway variables. Copy the names from `server/.env.example`. Never commit real values.
 3. Add operators from a Railway shell with `npm run operator`.
 4. Put the deployed HTTPS address in `PACKY_API_URL` for the Release config in `ios/project.yml`.
 5. Distribute through TestFlight internal testing, which needs an Apple Developer Program membership.
 
-| Variable | Purpose |
-| --- | --- |
-| `SHOPIFY_SHOP_DOMAIN` | `manisante.myshopify.com` |
-| `SHOPIFY_ADMIN_ACCESS_TOKEN` | Read-only Admin token, or use the two below |
-| `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET` | Dev Dashboard app using the client credentials grant |
-| `FATTURE_IN_CLOUD_API_KEY` | Read-only FIC token with products access |
-| `FIC_COMPANY_ID` | `763305` |
-| `PACKY_DB` | Database path. The image defaults to `/data/packy.db` |
-
-Least privilege for Shopify: `read_orders`, `read_products`, `read_merchant_managed_fulfillment_orders`, `read_assigned_fulfillment_orders`. Add customer data access only if the recipient name is wanted on screen. Without it the name may be blank, which Packy handles.
+The database path defaults to `/data/packy.db` in the image (`PACKY_DB`). Use read-only access for order and catalog sources. Add customer data access only if you want the recipient name on screen. Without it the name may be blank, which Packy handles.
 
 ## Operations
 
