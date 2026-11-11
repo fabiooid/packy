@@ -46,7 +46,7 @@ final class APIClient {
         let detail = try? JSONDecoder().decode(ErrorBody.self, from: data)
         if status == 401, detail?.error.code == "unauthenticated" { throw APIFailure.signedOut }
         throw APIFailure.rejected(code: detail?.error.code ?? "server_error",
-                                  message: detail?.error.message ?? "The server refused this. Nothing was recorded.",
+                                  message: detail?.error.message ?? "Il server ha rifiutato la richiesta. Non è stato registrato nulla.",
                                   pack: detail?.pack)
     }
 }

@@ -45,8 +45,8 @@ struct PackScreen: View {
                 }
             }
         }
-        .confirmationDialog("Mark \(pack.reference) as done?", isPresented: $confirmingComplete, titleVisibility: .visible) {
-            Button("Mark as done") { Task { await model.completeAfterRefresh() } }
+        .confirmationDialog("Segnare \(pack.reference) come completato?", isPresented: $confirmingComplete, titleVisibility: .visible) {
+            Button("Segna come completato") { Task { await model.completeAfterRefresh() } }
         } message: {
             Text(PackingFlow.markDoneConfirm)
         }
@@ -55,15 +55,15 @@ struct PackScreen: View {
                 Task { if await model.emptyBox() { dismiss() } }
             }
         }
-        .confirmationDialog("Pack \(pack.reference) again from the start?", isPresented: $confirmingAgain, titleVisibility: .visible) {
-            Button("Pack this again", role: .destructive) {
+        .confirmationDialog("Imballare di nuovo \(pack.reference) da capo?", isPresented: $confirmingAgain, titleVisibility: .visible) {
+            Button("Imballa di nuovo", role: .destructive) {
                 Task { if await model.emptyBox() { dismiss() } }
             }
         } message: {
-            Text("The done record will be cleared. Put the items back, then scan them again.")
+            Text("Il record di completamento verrà cancellato. Rimetti i pezzi, poi scansiona di nuovo.")
         }
-        .confirmationDialog("Why is this unit coming out?", isPresented: removingShown, titleVisibility: .visible, presenting: removing) { line in
-            ForEach([("damaged", "Damaged"), ("miscounted", "Miscounted"), ("other", "Other")], id: \.0) { reason in
+        .confirmationDialog("Perché togli questo pezzo?", isPresented: removingShown, titleVisibility: .visible, presenting: removing) { line in
+            ForEach([("damaged", "Danneggiato"), ("miscounted", "Contato per errore"), ("other", "Altro")], id: \.0) { reason in
                 Button(reason.1) {
                     if let unit = line.units.last {
                         Task { await model.perform("units/\(unit.id)/remove", extra: ["reason": reason.0]) }
@@ -71,7 +71,7 @@ struct PackScreen: View {
                 }
             }
         } message: { _ in
-            Text("Its credit is removed. Take it out of the box.")
+            Text("Il conteggio viene tolto. Toglilo dalla scatola.")
         }
     }
 
@@ -86,23 +86,23 @@ struct PackScreen: View {
         }
         if pack.status == "completed" {
             Notice(icon: "checkmark.seal.fill", color: .green,
-                   text: "Done. This is a packing record only. It does not ship the order.")
+                   text: "Completato. Questo è solo un record di imballaggio. Non spedisce l'ordine.")
             if pack.changedAfterCompletion {
-                Notice(icon: "exclamationmark.triangle.fill", color: .red, text: "This order changed after it was marked done.")
+                Notice(icon: "exclamationmark.triangle.fill", color: .red, text: "L'ordine è cambiato dopo essere stato segnato come completato.")
             }
             if pack.isOwner {
-                Button("Pack this again") { confirmingAgain = true }.buttonStyle(.bordered)
+                Button("Imballa di nuovo") { confirmingAgain = true }.buttonStyle(.bordered)
             }
         }
         if !pack.isOwner && pack.status == "active" {
-            Notice(icon: "eye", color: .secondary, text: "This order is open on another phone. You can look.")
+            Notice(icon: "eye", color: .secondary, text: "Aperto su un altro telefono. Puoi solo guardare.")
         }
         if !pack.eligible {
-            Notice(icon: "xmark.octagon.fill", color: .red, text: "\(pack.ineligibleReason ?? "This order cannot be packed.") Do not ship this box.")
+            Notice(icon: "xmark.octagon.fill", color: .red, text: "\(pack.ineligibleReason ?? "Questo ordine non si può imballare.") Non spedire questa scatola.")
         }
         if let message = pack.freshness.message {
             Notice(icon: "clock.badge.exclamationmark", color: .orange, text: message)
-            Button("Refresh now") { Task { await model.refresh() } }.buttonStyle(.bordered)
+            Button("Aggiorna ora") { Task { await model.refresh() } }.buttonStyle(.bordered)
         }
     }
 
@@ -114,7 +114,7 @@ struct PackScreen: View {
 
     @ViewBuilder private var discrepancies: some View {
         if !listedDiscrepancies.isEmpty {
-            SectionTitle("Account for these items")
+            SectionTitle("Sistemare questi pezzi")
             ForEach(listedDiscrepancies) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.title).font(.headline)
@@ -128,14 +128,14 @@ struct PackScreen: View {
 
     @ViewBuilder private var changes: some View {
         if !pack.changes.isEmpty {
-            SectionTitle("The order changed")
+            SectionTitle("L'ordine è cambiato")
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(pack.changes) { Text($0.message).font(.subheadline) }
                 if pack.isOwner && pack.status == "active" {
                     Button {
                         Task { await model.perform("reconcile") }
                     } label: {
-                        Text("Use the updated order").frame(maxWidth: .infinity)
+                        Text("Usa l'ordine aggiornato").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
@@ -164,7 +164,7 @@ struct PackScreen: View {
 
     @ViewBuilder private var nonPhysical: some View {
         if !pack.nonPhysical.isEmpty {
-            SectionTitle("Not physical, no scan needed")
+            SectionTitle("Non fisico, nessuna scansione")
             ForEach(pack.nonPhysical) { row in
                 Text("\(row.title) (\(row.reason))").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -173,7 +173,7 @@ struct PackScreen: View {
 
     @ViewBuilder private var blockerList: some View {
         if pack.status == "active" && !pack.blockers.isEmpty {
-            SectionTitle("Before this can be done")
+            SectionTitle("Prima di completare")
             ForEach(pack.blockers) { Text($0.message).font(.subheadline) }
         }
     }
@@ -188,7 +188,7 @@ struct PackScreen: View {
             Group {
                 if pack.canComplete {
                     Button { confirmingComplete = true } label: {
-                        Text("Mark as done")
+                        Text("Segna come completato")
                             .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.borderedProminent)
@@ -198,7 +198,7 @@ struct PackScreen: View {
                         .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Not ready yet")
+                    Text("Non ancora pronto")
                         .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                         .foregroundStyle(.secondary)
                 }
@@ -228,9 +228,9 @@ private struct ResolutionButtons: View {
 
     private static func label(for resolution: String) -> String {
         switch resolution {
-        case "set_aside": "It is out of the box"
-        case "never_in_box": "It never went in the box"
-        case "repeat_read": "Same item read twice, no extra"
+        case "set_aside": "L'ho tolto dalla scatola"
+        case "never_in_box": "Non è mai entrato"
+        case "repeat_read": "Stesso pezzo letto due volte"
         default: resolution
         }
     }
@@ -287,11 +287,11 @@ private struct ScanCardView: View {
             Label(message, systemImage: "exclamationmark.triangle.fill").font(.subheadline.bold()).foregroundStyle(.red).cardStyle(border: .red)
         case .unknownResult(let scan, let actionId):
             VStack(alignment: .leading, spacing: 8) {
-                Label("No answer from the server. This unit may not be recorded.", systemImage: "wifi.exclamationmark").font(.subheadline.bold()).foregroundStyle(.red)
+                Label("Nessuna risposta dal server. Questo pezzo potrebbe non essere contato.", systemImage: "wifi.exclamationmark").font(.subheadline.bold()).foregroundStyle(.red)
                 Button {
                     Task { await model.confirm(scan, actionId: actionId) }
                 } label: {
-                    Text("Try again (cannot count twice)").frame(maxWidth: .infinity)
+                    Text("Riprova (non può contare due volte)").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -302,10 +302,10 @@ private struct ScanCardView: View {
     private func title(_ scan: Scan) -> String {
         switch scan.outcome {
         case "wrong_product": PackingFlow.wrongProductTitle
-        case "excess": "Already done. Not counted."
-        case "unknown_code": "Unknown code. Not counted."
-        case "ambiguous_code": "Unclear code. Not counted."
-        default: "Cannot be checked. Not counted."
+        case "excess": "Già completo. Non contato."
+        case "unknown_code": "Codice sconosciuto. Non contato."
+        case "ambiguous_code": "Codice ambiguo. Non contato."
+        default: "Non ancora verificabile. Non contato."
         }
     }
 }
@@ -323,7 +323,7 @@ private struct LineRow: View {
                     if let name = line.identity.ficName {
                         Text(name).font(.subheadline)
                     } else {
-                        Text("Source title, not an official name: \(line.identity.sourceTitle)").font(.footnote).foregroundStyle(.secondary)
+                        Text("Titolo della fonte, non un nome ufficiale: \(line.identity.sourceTitle)").font(.footnote).foregroundStyle(.secondary)
                     }
                     if let codice = line.identity.codice {
                         Text(codice).font(.title3.bold().monospaced())

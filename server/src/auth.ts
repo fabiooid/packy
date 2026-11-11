@@ -35,8 +35,8 @@ interface UserRow { id: number; username: string; display_name: string; password
 
 export async function login(db: DatabaseSync, username: string, password: string, now: number): Promise<{ token: string; user: User; expiresAt: number }> {
   const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
-  const invalid = new ApiError(401, 'invalid_login', 'Wrong username or password.');
-  if (row && row.locked_until > now) throw new ApiError(429, 'locked', 'Too many attempts. Try again in 15 minutes.');
+  const invalid = new ApiError(401, 'invalid_login', 'Nome utente o password errati.');
+  if (row && row.locked_until > now) throw new ApiError(429, 'locked', 'Troppi tentativi. Riprova tra 15 minuti.');
   const ok = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
   if (!row || !row.active || !ok) {
     if (row) {
@@ -60,7 +60,7 @@ export function authenticate(db: DatabaseSync, header: string | undefined, now: 
     ? (db.prepare(`SELECT u.id, u.username, u.display_name FROM auth_sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`).get(tokenHash(token), now) as { id: number; username: string; display_name: string } | undefined)
     : undefined;
-  if (!row) throw new ApiError(401, 'unauthenticated', 'Please sign in.');
+  if (!row) throw new ApiError(401, 'unauthenticated', 'Accedi per continuare.');
   return { id: row.id, username: row.username, displayName: row.display_name };
 }
 

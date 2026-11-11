@@ -16,9 +16,9 @@ export interface Ctx {
 export const ORDER_MAX_AGE_MS = 5 * 60_000;
 export const CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
 export const SCAN_OFFER_MS = 90_000;
-export const LIMITS_NOTE = 'This code identifies the product type, not a single bottle.';
+export const LIMITS_NOTE = 'Questo codice identifica il tipo di prodotto, non il singolo pezzo.';
 
-function productLabel(codice: string | null | undefined, name: string | null | undefined, fallback = 'this product'): string {
+function productLabel(codice: string | null | undefined, name: string | null | undefined, fallback = 'questo prodotto'): string {
   if (codice && name) return `${name} (${codice})`;
   if (name) return name;
   if (codice) return codice;
@@ -83,13 +83,13 @@ export interface PackView {
 
 function getOrder(db: DatabaseSync, source: string, orderId: string): OrderRow {
   const row = db.prepare('SELECT * FROM orders WHERE source = ? AND order_id = ?').get(source, orderId) as OrderRow | undefined;
-  if (!row) throw new ApiError(404, 'order_not_found', 'This order is not in the current workload.');
+  if (!row) throw new ApiError(404, 'order_not_found', 'Questo ordine non è nell\'elenco attuale.');
   return row;
 }
 
 function getPack(db: DatabaseSync, packId: string): PackRow {
   const row = db.prepare('SELECT * FROM packs WHERE id = ?').get(packId) as PackRow | undefined;
-  if (!row) throw new ApiError(404, 'pack_not_found', 'This packing record does not exist.');
+  if (!row) throw new ApiError(404, 'pack_not_found', 'Questo imballo non esiste.');
   return row;
 }
 
@@ -125,13 +125,13 @@ function diffLines(accepted: SourceLine[], current: SourceLine[]): Change[] {
   const currentById = new Map(current.map((l) => [l.lineId, l]));
   for (const before of accepted) {
     const after = currentById.get(before.lineId);
-    if (!after) changes.push({ lineId: before.lineId, kind: 'removed', message: `${label(before)} is no longer on the order.` });
-    else if (after.sku !== before.sku || after.kind !== before.kind) changes.push({ lineId: before.lineId, kind: 'identity', message: `${label(before)} changed identity or type at the source.` });
-    else if (after.required !== before.required) changes.push({ lineId: before.lineId, kind: 'quantity', message: `${label(after)} quantity changed from ${before.required} to ${after.required}.` });
+    if (!after) changes.push({ lineId: before.lineId, kind: 'removed', message: `${label(before)} non è più nell'ordine.` });
+    else if (after.sku !== before.sku || after.kind !== before.kind) changes.push({ lineId: before.lineId, kind: 'identity', message: `${label(before)} è cambiato alla fonte.` });
+    else if (after.required !== before.required) changes.push({ lineId: before.lineId, kind: 'quantity', message: `${label(after)}: quantità cambiata da ${before.required} a ${after.required}.` });
   }
   const acceptedIds = new Set(accepted.map((l) => l.lineId));
   for (const after of current) {
-    if (!acceptedIds.has(after.lineId)) changes.push({ lineId: after.lineId, kind: 'added', message: `${label(after)} was added to the order.` });
+    if (!acceptedIds.has(after.lineId)) changes.push({ lineId: after.lineId, kind: 'added', message: `${label(after)} è stato aggiunto all'ordine.` });
   }
   return changes;
 }
@@ -139,18 +139,18 @@ function diffLines(accepted: SourceLine[], current: SourceLine[]): Change[] {
 function freshness(ctx: Ctx, order: OrderRow): PackView['freshness'] {
   const status = ctx.db.prepare('SELECT status FROM source_status WHERE source = ?').get(order.source) as { status: string } | undefined;
   if (status?.status !== 'ok') {
-    return { state: 'unavailable', pulledAt: order.pulled_at, message: 'The order source could not be reached. This is the last saved copy.' };
+    return { state: 'unavailable', pulledAt: order.pulled_at, message: 'Fonte dell\'ordine non raggiungibile. Questa è l\'ultima copia salvata.' };
   }
   if (ctx.now() - order.pulled_at > ORDER_MAX_AGE_MS) {
-    return { state: 'cached', pulledAt: order.pulled_at, message: 'This saved copy is too old to certify. Refresh before completing.' };
+    return { state: 'cached', pulledAt: order.pulled_at, message: 'Questa copia è troppo vecchia. Aggiorna prima di completare.' };
   }
   return { state: 'current', pulledAt: order.pulled_at, message: null };
 }
 
 function catalogProblem(ctx: Ctx): string | null {
   const row = ctx.db.prepare(`SELECT last_success_at FROM source_status WHERE source = 'fic'`).get() as { last_success_at: number | null } | undefined;
-  if (!row?.last_success_at) return 'The FIC catalog has never been read, so product identity cannot be confirmed.';
-  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'The FIC catalog copy is more than a day old. Refresh before completing.';
+  if (!row?.last_success_at) return 'Il catalogo FIC non è mai stato letto, quindi i prodotti non si possono confermare.';
+  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'La copia del catalogo FIC ha più di un giorno. Aggiorna prima di completare.';
   return null;
 }
 
@@ -178,18 +178,18 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   const open = db.prepare(`SELECT * FROM discrepancies WHERE pack_id = ? AND status = 'open' ORDER BY created_at`).all(pack.id) as unknown as DiscrepancyRow[];
   const fresh = freshness(ctx, order);
   const blockers: Blocker[] = [];
-  if (!order.eligible) blockers.push({ code: 'order_ineligible', message: order.ineligible_reason ?? 'This order cannot be packed.' });
-  if (changes.length > 0) blockers.push({ code: 'order_changed', message: 'The order changed since packing began. Review the changes.' });
-  if (fresh.state !== 'current') blockers.push({ code: 'stale_data', message: fresh.message ?? 'Order data is not current.' });
+  if (!order.eligible) blockers.push({ code: 'order_ineligible', message: order.ineligible_reason ?? 'Questo ordine non si può imballare.' });
+  if (changes.length > 0) blockers.push({ code: 'order_changed', message: 'L\'ordine è cambiato dopo l\'inizio. Controlla le modifiche.' });
+  if (fresh.state !== 'current') blockers.push({ code: 'stale_data', message: fresh.message ?? 'I dati dell\'ordine non sono aggiornati.' });
   const catalog = catalogProblem(ctx);
   if (catalog) blockers.push({ code: 'catalog_stale', message: catalog });
   for (const line of lines) {
-    const name = line.identity.codice ?? 'Unresolved line';
-    if (line.kind === 'uncertain') blockers.push({ code: 'classification_uncertain', lineId: line.lineId, message: line.kindReason ?? 'This row may be a physical item.' });
-    if (line.identity.status === 'unresolved') blockers.push({ code: 'identity_unresolved', lineId: line.lineId, message: line.identity.reason ?? 'Product identity is unresolved.' });
-    else if (line.verification?.blockCode) blockers.push({ code: line.verification.blockCode, lineId: line.lineId, message: line.verification.reason ?? 'This product cannot be verified.' });
-    if (line.uncertain > 0) blockers.push({ code: 'units_uncertain', lineId: line.lineId, message: `${name}: ${line.uncertain} unit(s) must be checked again.` });
-    if (line.remaining > 0) blockers.push({ code: 'units_missing', lineId: line.lineId, message: `${name}: ${line.remaining} of ${line.required} still to verify.` });
+    const name = line.identity.codice ?? 'Riga non identificata';
+    if (line.kind === 'uncertain') blockers.push({ code: 'classification_uncertain', lineId: line.lineId, message: line.kindReason ?? 'Questa riga potrebbe essere un prodotto fisico.' });
+    if (line.identity.status === 'unresolved') blockers.push({ code: 'identity_unresolved', lineId: line.lineId, message: line.identity.reason ?? 'Prodotto non identificato.' });
+    else if (line.verification?.blockCode) blockers.push({ code: line.verification.blockCode, lineId: line.lineId, message: line.verification.reason ?? 'Questo prodotto non si può verificare.' });
+    if (line.uncertain > 0) blockers.push({ code: 'units_uncertain', lineId: line.lineId, message: `${name}: ${line.uncertain} da ricontrollare.` });
+    if (line.remaining > 0) blockers.push({ code: 'units_missing', lineId: line.lineId, message: `${name}: ne mancano ${line.remaining} su ${line.required}.` });
   }
   for (const d of open) blockers.push({ code: 'discrepancy_open', message: d.title });
 
@@ -223,7 +223,7 @@ function otherOpenOrder(db: DatabaseSync, userId: number, exceptPackId: string |
 }
 
 function refuseSecondOrder(reference: string): never {
-  throw new ApiError(409, 'order_already_open', `Finish ${reference} first. One order at a time.`);
+  throw new ApiError(409, 'order_already_open', `Prima finisci ${reference}. Un ordine alla volta.`);
 }
 
 /** Opens the live pack for an order, creating it for an eligible order. Opening never takes over from someone else. */
@@ -234,7 +234,7 @@ export function openPack(ctx: Ctx, user: User, source: string, orderId: string):
     if (existing) return buildView(ctx, existing, user);
     const already = otherOpenOrder(ctx.db, user.id, null);
     if (already) refuseSecondOrder(already);
-    if (!order.eligible) throw new ApiError(409, 'order_ineligible', order.ineligible_reason ?? 'This order cannot be packed.');
+    if (!order.eligible) throw new ApiError(409, 'order_ineligible', order.ineligible_reason ?? 'Questo ordine non si può imballare.');
     const id = randomUUID();
     ctx.db.prepare('INSERT INTO packs (id, source, order_id, status, owner_user_id, accepted_lines, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
       .run(id, source, orderId, 'active', user.id, order.lines, ctx.now(), ctx.now());
@@ -248,19 +248,19 @@ interface Guard { pack: PackRow; view: PackView }
 function guardWrite(ctx: Ctx, packId: string, user: User, version: number | null): Guard {
   const pack = getPack(ctx.db, packId);
   const view = buildView(ctx, pack, user);
-  if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'This packing record is closed.', { pack: view });
-  if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', `${view.ownerName} is packing this order.`, { pack: view });
-  if (version !== null && version !== pack.version) throw new ApiError(409, 'stale_version', 'This order changed on another screen. Check the latest progress.', { pack: view });
+  if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.', { pack: view });
+  if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', `${view.ownerName} sta imballando questo ordine.`, { pack: view });
+  if (version !== null && version !== pack.version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.', { pack: view });
   return { pack, view };
 }
 
 /** Replays the stored result of an action id, so a retried tap can never add a second unit. */
 function idempotent<T>(ctx: Ctx, actionId: string, packId: string, fn: () => T): T {
-  if (!actionId) throw new ApiError(400, 'action_id_required', 'Every action needs an action id.');
+  if (!actionId) throw new ApiError(400, 'action_id_required', 'Ogni azione richiede un identificativo.');
   return tx(ctx.db, () => {
     const stored = ctx.db.prepare('SELECT pack_id, response FROM actions WHERE action_id = ?').get(actionId) as { pack_id: string; response: string } | undefined;
     if (stored) {
-      if (stored.pack_id !== packId) throw new ApiError(409, 'action_id_reused', 'This action id belongs to another order.');
+      if (stored.pack_id !== packId) throw new ApiError(409, 'action_id_reused', 'Questo identificativo appartiene a un altro ordine.');
       return JSON.parse(stored.response) as T;
     }
     const result = fn();
@@ -270,8 +270,8 @@ function idempotent<T>(ctx: Ctx, actionId: string, packId: string, fn: () => T):
 }
 
 function requireScannable(view: PackView): void {
-  if (!view.eligible) throw new ApiError(409, 'order_ineligible', view.ineligibleReason ?? 'This order cannot be packed.', { pack: view });
-  if (view.changes.length > 0) throw new ApiError(409, 'order_changed', 'The order changed. Review the changes before packing more.', { pack: view });
+  if (!view.eligible) throw new ApiError(409, 'order_ineligible', view.ineligibleReason ?? 'Questo ordine non si può imballare.', { pack: view });
+  if (view.changes.length > 0) throw new ApiError(409, 'order_changed', 'L\'ordine è cambiato. Controlla le modifiche prima di continuare.', { pack: view });
 }
 
 export type ScanOutcome = 'eligible' | 'wrong_product' | 'excess' | 'unknown_code' | 'ambiguous_code' | 'line_blocked';
@@ -298,7 +298,7 @@ function raiseDiscrepancy(ctx: Ctx, packId: string, kind: string, barcode: strin
 
 /** Classifies a camera read. It never adds credit. An eligible read only yields a single-use offer to confirm. */
 export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string, symbology: string | null): ScanResult {
-  if (typeof barcode !== 'string' || barcode.length === 0 || barcode.length > 128) throw new ApiError(400, 'bad_barcode', 'The scan payload was empty or invalid.');
+  if (typeof barcode !== 'string' || barcode.length === 0 || barcode.length > 128) throw new ApiError(400, 'bad_barcode', 'La scansione era vuota o non valida.');
   return tx(ctx.db, () => {
     const { pack, view } = guardWrite(ctx, packId, user, null);
     requireScannable(view);
@@ -320,31 +320,31 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
 
     if (lookup.status === 'unknown') {
       outcome = 'unknown_code';
-      message = 'This code is not linked to any product. It earns no credit.';
-      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Unknown code ${barcode}`, 'If this item is in the box, take it out. It stays unresolved until you account for it.');
+      message = 'Questo codice non è collegato a nessun prodotto. Non contato.';
+      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Codice sconosciuto ${barcode}`, 'Se questo pezzo è nella scatola, toglilo. Resta irrisolto finché non lo sistemerai.');
     } else if (lookup.status === 'conflict') {
       outcome = 'ambiguous_code';
-      message = `${lookup.reason} It earns no credit.`;
-      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Conflicting code ${barcode}`, `${lookup.reason} If this item is in the box, take it out.`);
+      message = `${lookup.reason} Non contato.`;
+      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Codice in conflitto ${barcode}`, `${lookup.reason} Se questo pezzo è nella scatola, toglilo.`);
     } else {
       codice = lookup.codice;
       name = productName(ctx.db, codice);
       const matching = view.lines.filter((l) => l.identity.codice === codice);
       const open = matching.find((l) => l.state !== 'blocked' && (l.uncertain > 0 || l.remaining > 0));
-      const label = `${codice} ${name ?? '(not in FIC catalog)'}`;
+      const label = `${codice} ${name ?? '(non nel catalogo FIC)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
         message = needed
-          ? `Wrong product. Not counted. This order still needs ${needed}.`
-          : `Wrong product. Not counted. ${productLabel(codice, name)} is not on this order.`;
+          ? `Prodotto sbagliato. Non contato. A questo ordine manca ancora ${needed}.`
+          : `Prodotto sbagliato. Non contato. ${productLabel(codice, name)} non è in questo ordine.`;
         discrepancyId = raiseDiscrepancy(
           ctx, pack.id, outcome, barcode, codice,
-          `Wrong product: ${productLabel(codice, name)}`,
-          `${productLabel(codice, name)} is not on this order. It was not counted. Account for the physical item.`,
+          `Prodotto sbagliato: ${productLabel(codice, name)}`,
+          `${productLabel(codice, name)} non è in questo ordine. Non contato. Occupati del pezzo fisico.`,
         );
       } else if (matching.every((l) => l.state === 'blocked')) {
         outcome = 'line_blocked';
-        message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'This line cannot be verified yet.';
+        message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'Questa riga non si può ancora verificare.';
       } else if (open) {
         outcome = 'eligible';
         lineId = open.lineId;
@@ -352,15 +352,15 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
         required = open.required;
         unitNumber = recheck ? open.verified + 1 : open.verified + open.uncertain + 1;
         expiresAt = ctx.now() + SCAN_OFFER_MS;
-        message = recheck ? `${label}: check unit ${unitNumber} of ${required} again.` : `${label}: unit ${unitNumber} of ${required}.`;
+        message = recheck ? `${label}: ricontrolla il pezzo ${unitNumber} di ${required}.` : `${label}: pezzo ${unitNumber} di ${required}.`;
       } else {
         outcome = 'excess';
         const total = matching.reduce((sum, l) => sum + l.required, 0);
-        message = `${productLabel(codice, name)}: extra item. The order needs ${total}. Not counted.`;
+        message = `${productLabel(codice, name)}: pezzo in più. L'ordine ne richiede ${total}. Non contato.`;
         discrepancyId = raiseDiscrepancy(
           ctx, pack.id, outcome, barcode, codice,
           `Extra item: ${productLabel(codice, name)}`,
-          `${productLabel(codice, name)} is extra. The order needs ${total}. It was not counted. Account for the physical item.`,
+          `${productLabel(codice, name)} è in più. L'ordine ne richiede ${total}. Non contato. Occupati del pezzo fisico.`,
         );
       }
     }
@@ -382,18 +382,18 @@ export function confirmUnit(ctx: Ctx, user: User, packId: string, scanId: string
     const { pack, view } = guardWrite(ctx, packId, user, version);
     requireScannable(view);
     const scan = ctx.db.prepare('SELECT * FROM scans WHERE id = ? AND pack_id = ?').get(scanId, pack.id) as ScanRow | undefined;
-    if (!scan || scan.outcome !== 'eligible' || !scan.line_id) throw new ApiError(409, 'scan_not_eligible', 'This scan cannot be confirmed.', { pack: view });
-    if (scan.user_id !== user.id) throw new ApiError(403, 'not_owner', 'Only the person who scanned can confirm.', { pack: view });
-    if (scan.consumed_at) throw new ApiError(409, 'scan_used', 'This scan was already used. Scan the next unit.', { pack: view });
-    if ((scan.expires_at ?? 0) < ctx.now()) throw new ApiError(409, 'scan_expired', 'This scan expired. Scan the item again.', { pack: view });
+    if (!scan || scan.outcome !== 'eligible' || !scan.line_id) throw new ApiError(409, 'scan_not_eligible', 'Questa scansione non si può confermare.', { pack: view });
+    if (scan.user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi ha scansionato può confermare.', { pack: view });
+    if (scan.consumed_at) throw new ApiError(409, 'scan_used', 'Scansione già usata. Scansiona il pezzo successivo.', { pack: view });
+    if ((scan.expires_at ?? 0) < ctx.now()) throw new ApiError(409, 'scan_expired', 'Scansione scaduta. Scansiona di nuovo il prodotto.', { pack: view });
     const line = view.lines.find((l) => l.lineId === scan.line_id);
-    if (!line || line.state === 'blocked' || !line.identity.codice) throw new ApiError(409, 'line_blocked', 'This line cannot be verified now.', { pack: view });
+    if (!line || line.state === 'blocked' || !line.identity.codice) throw new ApiError(409, 'line_blocked', 'Questa riga non si può verificare ora.', { pack: view });
 
     const recheck = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND line_id = ? AND status = 'uncertain' ORDER BY confirmed_at LIMIT 1`).get(pack.id, line.lineId) as { id: string } | undefined;
     if (recheck) {
       ctx.db.prepare(`UPDATE units SET status = 'verified', barcode = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ?`).run(scan.barcode, user.id, ctx.now(), recheck.id);
     } else {
-      if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'This line is already complete. Nothing was added.', { pack: view });
+      if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'Questa riga è già completa. Non è stato aggiunto nulla.', { pack: view });
       ctx.db.prepare(`INSERT INTO units (id, pack_id, line_id, codice, barcode, status, confirmed_by, confirmed_at) VALUES (?,?,?,?,?,'verified',?,?)`)
         .run(randomUUID(), pack.id, line.lineId, line.identity.codice, scan.barcode, user.id, ctx.now());
     }
@@ -407,10 +407,10 @@ export function confirmUnit(ctx: Ctx, user: User, packId: string, scanId: string
 export function removeUnit(ctx: Ctx, user: User, packId: string, unitId: string, reason: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack } = guardWrite(ctx, packId, user, version);
-    if (!['damaged', 'miscounted', 'other'].includes(reason)) throw new ApiError(400, 'bad_reason', 'Choose why the unit came out.');
+    if (!['damaged', 'miscounted', 'other'].includes(reason)) throw new ApiError(400, 'bad_reason', 'Scegli perché il pezzo è stato tolto.');
     const done = ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = ? WHERE id = ? AND pack_id = ? AND status != 'removed'`)
       .run(user.id, ctx.now(), reason, unitId, pack.id);
-    if (done.changes === 0) throw new ApiError(404, 'unit_not_found', 'This unit is not counted on this order.');
+    if (done.changes === 0) throw new ApiError(404, 'unit_not_found', 'Questo pezzo non è contato in questo ordine.');
     logEvent(ctx, pack.id, 'unit_removed', user.id, { unitId, reason });
     bump(ctx, pack.id);
     return viewPack(ctx, pack.id, user);
@@ -421,8 +421,8 @@ export function resolveDiscrepancy(ctx: Ctx, user: User, packId: string, discrep
   return idempotent(ctx, actionId, packId, () => {
     const { pack } = guardWrite(ctx, packId, user, version);
     const row = ctx.db.prepare(`SELECT kind FROM discrepancies WHERE id = ? AND pack_id = ? AND status = 'open'`).get(discrepancyId, pack.id) as { kind: string } | undefined;
-    if (!row) throw new ApiError(404, 'discrepancy_not_found', 'This discrepancy is not open.');
-    if (!RESOLUTIONS[row.kind]?.includes(resolution)) throw new ApiError(400, 'bad_resolution', 'That answer does not apply here.');
+    if (!row) throw new ApiError(404, 'discrepancy_not_found', 'Questa segnalazione non è aperta.');
+    if (!RESOLUTIONS[row.kind]?.includes(resolution)) throw new ApiError(400, 'bad_resolution', 'Questa risposta non vale qui.');
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`).run(resolution, user.id, ctx.now(), discrepancyId);
     logEvent(ctx, pack.id, 'discrepancy_resolved', user.id, { discrepancyId, resolution });
     bump(ctx, pack.id);
@@ -434,7 +434,7 @@ export function resolveDiscrepancy(ctx: Ctx, user: User, packId: string, discrep
 export function reconcile(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack, view } = guardWrite(ctx, packId, user, version);
-    if (view.changes.length === 0) throw new ApiError(409, 'nothing_to_reconcile', 'The order has not changed.', { pack: view });
+    if (view.changes.length === 0) throw new ApiError(409, 'nothing_to_reconcile', 'L\'ordine non è cambiato.', { pack: view });
     const order = getOrder(ctx.db, pack.source, pack.order_id);
     const current = JSON.parse(order.lines) as SourceLine[];
     const units = ctx.db.prepare(`SELECT * FROM units WHERE pack_id = ? AND status != 'removed' ORDER BY status ASC, confirmed_at DESC`).all(pack.id) as unknown as UnitRow[];
@@ -449,8 +449,8 @@ export function reconcile(ctx: Ctx, user: User, packId: string, actionId: string
       for (const unit of excess) {
         ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'order_changed' WHERE id = ?`).run(user.id, ctx.now(), unit.id);
       }
-      raiseDiscrepancy(ctx, pack.id, 'order_reduced', own[0].barcode, own[0].codice, `Take out ${excess.length} x ${own[0].codice}`,
-        'The order no longer needs these units. Their credit is gone. Take them out of the box.');
+      raiseDiscrepancy(ctx, pack.id, 'order_reduced', own[0].barcode, own[0].codice, `Togli ${excess.length} x ${own[0].codice}`,
+        'L\'ordine non richiede più questi pezzi. Il conteggio è stato tolto. Toglili dalla scatola.');
     }
     ctx.db.prepare('UPDATE packs SET accepted_lines = ? WHERE id = ?').run(order.lines, pack.id);
     logEvent(ctx, pack.id, 'reconciled', user.id, view.changes);
@@ -465,7 +465,7 @@ function markAllUncertain(ctx: Ctx, packId: string): void {
 
 function requireCurrentVersion(ctx: Ctx, pack: PackRow, user: User, version: number): void {
   if (pack.version !== version) {
-    throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.', { pack: buildView(ctx, pack, user) });
+    throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.', { pack: buildView(ctx, pack, user) });
   }
 }
 
@@ -473,7 +473,7 @@ function requireCurrentVersion(ctx: Ctx, pack: PackRow, user: User, version: num
 export function takeOver(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'This packing record is closed.');
+    if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
     requireCurrentVersion(ctx, pack, user, version);
     if (pack.owner_user_id === user.id) return buildView(ctx, pack, user);
     const already = otherOpenOrder(ctx.db, user.id, pack.id);
@@ -489,7 +489,7 @@ export function takeOver(ctx: Ctx, user: User, packId: string, actionId: string,
 export function complete(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack, view } = guardWrite(ctx, packId, user, version);
-    if (view.blockers.length > 0) throw new ApiError(409, 'completion_blocked', 'This order cannot be completed yet.', { pack: view });
+    if (view.blockers.length > 0) throw new ApiError(409, 'completion_blocked', 'Questo ordine non si può ancora completare.', { pack: view });
     ctx.db.prepare(`UPDATE packs SET status = 'completed', completed_at = ?, completed_by = ? WHERE id = ?`).run(ctx.now(), user.id, pack.id);
     logEvent(ctx, pack.id, 'completed', user.id);
     bump(ctx, pack.id);
@@ -500,7 +500,7 @@ export function complete(ctx: Ctx, user: User, packId: string, actionId: string,
 export function reopen(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status !== 'completed') throw new ApiError(409, 'pack_not_completed', 'Only a packed order can be reopened.');
+    if (pack.status !== 'completed') throw new ApiError(409, 'pack_not_completed', 'Si può riaprire solo un ordine imballato.');
     requireCurrentVersion(ctx, pack, user, version);
     const already = otherOpenOrder(ctx.db, user.id, pack.id);
     if (already) refuseSecondOrder(already);
@@ -516,13 +516,13 @@ export function reopen(ctx: Ctx, user: User, packId: string, actionId: string, v
 export function release(ctx: Ctx, user: User, packId: string, actionId: string, version: number): { released: true } {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'This packing record is closed.');
-    if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Only the current packer can empty this box.');
-    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.');
+    if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
+    if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi sta imballando può svuotare la scatola.');
+    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.');
     if (pack.status === 'active') {
       const counted = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND status != 'removed' LIMIT 1`).get(pack.id);
       if (counted) {
-        throw new ApiError(409, 'session_locked', 'This order already has a count. Stay on it until it is packed.', { pack: buildView(ctx, pack, user) });
+        throw new ApiError(409, 'session_locked', 'Questo ordine ha già un conteggio. Resta su questo finché non è imballato.', { pack: buildView(ctx, pack, user) });
       }
     }
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);

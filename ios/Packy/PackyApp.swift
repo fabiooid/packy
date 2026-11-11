@@ -15,6 +15,7 @@ struct PackyApp: App {
                 }
             }
             .environment(model)
+            .environment(\.locale, Locale(identifier: "it_IT"))
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, model.signedIn { Task { await model.refresh() } }
@@ -53,7 +54,7 @@ struct LoginView: View {
                     working = false
                 }
             } label: {
-                Text(working ? "Signing in..." : "Sign in").frame(maxWidth: .infinity).padding(.vertical, 6)
+                Text(working ? "Accesso in corso..." : "Accedi").frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
             .disabled(working || username.isEmpty || password.isEmpty)

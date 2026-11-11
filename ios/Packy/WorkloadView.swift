@@ -22,14 +22,14 @@ struct WorkloadView: View {
                 if let workload = model.workload {
                     orderSection(workload)
                 } else if case .loading = model.loadState {
-                    Section { ProgressView("Checking orders...") }
+                    Section { ProgressView("Controllo ordini...") }
                 }
             }
             .navigationTitle(PackingFlow.listHeading)
             .refreshable { await model.refresh() }
             .toolbar {
                 Menu {
-                    Button("Sign out") { Task { await model.logout() } }
+                    Button("Esci dall'account") { Task { await model.logout() } }
                 } label: {
                     Image(systemName: "person.circle")
                 }
@@ -112,7 +112,7 @@ struct WorkloadView: View {
             } catch APIFailure.rejected(_, let message, _) {
                 openError = message
             } catch {
-                openError = "Could not reach the server, so this order was not opened."
+                openError = "Server non raggiungibile: l'ordine non è stato aperto."
             }
         }
     }
