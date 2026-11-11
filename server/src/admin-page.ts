@@ -14,7 +14,7 @@ export const ADMIN_HTML = `<!doctype html>
 <meta name="robots" content="noindex">
 <title>Packy · Ordini imballati</title>
 <style>
-:root { --ground:#FDEED1; --card:#FFFFFF; --ink:#16181D; --muted:#5C6068; --line:#E6D8BF; --accent:#4251E4; --success:#0B7A47; --success-soft:#E3F3EA; --danger:#C1232B; --warn-bg:#E9BC79; --warn:#6E4912; }
+:root { --ground:#F4F3EF; --card:#FFFFFF; --ink:#16181D; --muted:#5C6068; --line:#E4E2DC; --divider:#EEEDE8; --accent:#4251E4; --success:#0B7A47; --success-soft:#E3F3EA; --danger:#C1232B; --warn-bg:#FDEFD9; --warn:#8A4500; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--ground); color:var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif; }
 main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -36,7 +36,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .stat b { display: block; font-size: 30px; letter-spacing: -0.01em; }
 .stat span { color: var(--muted); font-size: 13px; }
 .day { margin: 18px 4px 8px; font-weight: 600; color: var(--muted); font-size: 14px; }
-.row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--divider); }
 .check { width: 36px; height: 36px; border-radius: 18px; background: var(--success); display: flex; align-items: center; justify-content: center; }
 .check svg { width: 20px; height: 20px; }
 .status { display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
