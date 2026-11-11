@@ -891,8 +891,9 @@ describe('web dashboard', () => {
     assert.match(logo.headers.get('content-type') ?? '', /image\/png/);
     const logoBytes = Buffer.from(await logo.arrayBuffer());
     assert.equal(logoBytes.subarray(1, 4).toString(), 'PNG');
-    assert.equal(logoBytes.readUInt32BE(16), 826);
-    assert.equal(logoBytes.readUInt32BE(20), 740);
+    // Shown at 72px at most, so 144px wide covers 2x screens without shipping the 826px source.
+    assert.equal(logoBytes.readUInt32BE(16), 144);
+    assert.equal(Math.round(logoBytes.readUInt32BE(20) / logoBytes.readUInt32BE(16) * 826), 740, 'keeps the mark\'s proportions');
     assert.equal(logoBytes[25], 6);
     const favicon = await app.request('/admin/favicon.png');
     assert.equal(favicon.status, 200);

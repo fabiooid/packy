@@ -18,6 +18,8 @@ enum Theme {
     static let brand = Color(hex: 0x4251E4)
     /// Field bottom of the AppIcon, RGB(32, 31, 144). Login gradient only.
     static let brandDeep = Color(hex: 0x201F90)
+    /// Bottom of the login gradient. Darker than the carton blue so the LoginMark's sides stay visible.
+    static let brandNight = Color(hex: 0x0E0D4A)
     /// Cream interior of the carton. Login titles, labels, and Accedi only.
     static let cream = Color(hex: 0xFDEED1)
 
