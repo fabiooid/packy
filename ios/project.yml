@@ -1,0 +1,44 @@
+name: Packy
+options:
+  bundleIdPrefix: it.manisante
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  Packy:
+    type: application
+    platform: iOS
+    sources: [Packy]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.manisante.packy
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Packy/Info.plist
+      configs:
+        Debug:
+          PACKY_API_URL: "http:/$()/localhost:8787"
+        Release:
+          PACKY_API_URL: "https:/$()/REPLACE-WITH-DEPLOYED-HOST"
+  PackyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [PackyTests]
+    dependencies:
+      - target: Packy
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Packy:
+    build:
+      targets:
+        Packy: all
+        PackyTests: [test]
+    test:
+      targets: [PackyTests]

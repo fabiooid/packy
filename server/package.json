@@ -1,0 +1,24 @@
+{
+  "name": "packy-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/index.ts",
+    "dev:fixtures": "PACKY_FIXTURES=1 PACKY_DB=data/fixtures.db node src/index.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "operator": "node scripts/operator.ts",
+    "barcodes:import": "node scripts/import-barcodes.ts",
+    "purge": "node scripts/purge.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.2"
+  }
+}

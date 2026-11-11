@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+server/data/
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+ios/*.xcodeproj
+ios/build/
+DerivedData/
