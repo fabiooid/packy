@@ -165,7 +165,7 @@ describe('3 and 6. units, detection, repeated reads', () => {
     assert.equal(retry.json.lines[0].verified, 1);
   });
   test('every view states that codes cannot prove distinct bottles', async () => {
-    assert.match((await open(ana, 'f1')).limitsNote, /product type, not a single bottle/);
+    assert.match((await open(ana, 'f1')).limitsNote, /tipo di prodotto, non il singolo pezzo/);
   });
 });
 
@@ -176,8 +176,8 @@ describe('4. wrong product and excess', () => {
     assert.equal(s.json.scan.outcome, 'wrong_product');
     assert.equal(s.json.scan.codice, 'MS002');
     assert.equal(s.json.scan.productName, 'Cardamomo Sapone Mani 500ml');
-    assert.match(s.json.scan.message, /Wrong product\. Not counted/);
-    assert.match(s.json.scan.message, /still needs Cardamomo Sapone Mani 250ml \(MS001\)/);
+    assert.match(s.json.scan.message, /Prodotto sbagliato\. Non contato/);
+    assert.match(s.json.scan.message, /manca ancora Cardamomo Sapone Mani 250ml \(MS001\)/);
     assert.equal(s.json.pack.lines[0].verified, 0);
     assert.equal(s.json.scan.id.length > 0, true);
     const offer = await confirm(ana, s.json.pack, s.json.scan.id);
@@ -207,10 +207,10 @@ describe('4. wrong product and excess', () => {
 describe('5. missing units and nonphysical rows', () => {
   test('one missing free sample blocks completion; the shipping row needs no scan', async () => {
     let p = await open(ana, 'f2');
-    assert.deepEqual(p.nonPhysical, [{ title: 'Standard', reason: 'Shipping charge' }]);
+    assert.deepEqual(p.nonPhysical, [{ title: 'Standard', reason: 'Spedizione' }]);
     p = await packUnit(ana, p, MS002);
     assert.deepEqual(codes(p), ['units_missing']);
-    assert.match(p.blockers[0].message, /MS040: 1 of 1/);
+    assert.match(p.blockers[0].message, /MS040: ne mancano 1 su 1/);
     p = await packUnit(ana, p, MS040);
     assert.equal(p.canComplete, true);
     p = (await act(ana, p, 'complete')).json;
@@ -235,7 +235,7 @@ describe('5. missing units and nonphysical rows', () => {
     const o = normalizeOrder(node);
     assert.equal(o.lines.find((l) => l.lineId === 'a')?.kind, 'physical');
     assert.equal(o.lines.find((l) => l.lineId === 'b')?.kind, 'uncertain');
-    assert.deepEqual(o.nonPhysical, [{ title: 'Express', reason: 'Shipping charge' }]);
+    assert.deepEqual(o.nonPhysical, [{ title: 'Express', reason: 'Spedizione' }]);
   });
 });
 
@@ -245,7 +245,7 @@ describe('7. interruption and corrections', () => {
     const blocked = await call(ana, 'POST', '/v1/packs', { source: 'fixture', orderId: 'f2' });
     assert.equal(blocked.status, 409);
     assert.equal(blocked.json.error.code, 'order_already_open');
-    assert.match(blocked.json.error.message, /One order at a time/);
+    assert.match(blocked.json.error.message, /Un ordine alla volta/);
     const same = await open(ana, 'f1');
     assert.equal(same.id, first.id);
     assert.equal((await act(ana, first, 'release')).status, 200);
@@ -375,7 +375,7 @@ describe('v1 session and counting rules', () => {
     const s = await scan(ana, p, MS002);
     assert.equal(s.json.scan.outcome, 'excess');
     assert.match(s.json.scan.message, /Cardamomo Sapone Mani 500ml \(MS002\)/);
-    assert.match(s.json.scan.message, /Not counted/);
+    assert.match(s.json.scan.message, /Non contato/);
     assert.equal(s.json.pack.lines[0].verified, 1);
     assert.equal(s.json.pack.canComplete, false);
     assert.ok(codes(s.json.pack).includes('discrepancy_open'));

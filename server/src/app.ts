@@ -23,19 +23,19 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
       return c.json({ error: { code: error.code, message: error.message }, ...error.extra }, error.status as ContentfulStatusCode);
     }
     console.error('unhandled_error', error instanceof Error ? error.name : 'unknown');
-    return c.json({ error: { code: 'server_error', message: 'Something went wrong. Nothing was recorded.' } }, 500);
+    return c.json({ error: { code: 'server_error', message: 'Qualcosa è andato storto. Non è stato registrato nulla.' } }, 500);
   });
 
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   const body = async (c: { req: { json: () => Promise<unknown> } }) => {
     const value = await c.req.json().catch(() => null);
-    if (typeof value !== 'object' || value === null) throw new ApiError(400, 'bad_json', 'The request body was invalid.');
+    if (typeof value !== 'object' || value === null) throw new ApiError(400, 'bad_json', 'La richiesta non è valida.');
     return value as Record<string, unknown>;
   };
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   const num = (v: unknown) => {
-    if (typeof v !== 'number') throw new ApiError(400, 'version_required', 'The request is missing the order version.');
+    if (typeof v !== 'number') throw new ApiError(400, 'version_required', 'Alla richiesta manca la versione dell\'ordine.');
     return v;
   };
 
@@ -101,7 +101,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
       }
       if (b.action === 'cancel') {
         const order = fixture.orders.find((o) => o.orderId === str(b.orderId));
-        if (order) { order.eligible = false; order.ineligibleReason = 'Cancelled at the source.'; }
+        if (order) { order.eligible = false; order.ineligibleReason = 'Annullato alla fonte.'; }
       }
       if (b.action === 'outage') fixture.failing = b.on === true;
       return c.json({ ok: true });

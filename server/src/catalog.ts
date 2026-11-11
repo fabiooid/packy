@@ -64,11 +64,11 @@ export function lookupBarcode(db: DatabaseSync, barcode: string): BarcodeLookup 
   const codici = codiciFor(db, barcode);
   if (codici.length === 0) return { status: 'unknown' };
   if (codici.length > 1) {
-    return { status: 'conflict', codici, reason: `This code is mapped to ${codici.length} products: ${codici.join(', ')}.` };
+    return { status: 'conflict', codici, reason: `Questo codice è collegato a ${codici.length} prodotti: ${codici.join(', ')}.` };
   }
   const siblings = barcodesFor(db, codici[0]);
   if (siblings.length > 1) {
-    return { status: 'conflict', codici, reason: `${codici[0]} has ${siblings.length} different codes on record. The mapping needs review.` };
+    return { status: 'conflict', codici, reason: `${codici[0]} ha ${siblings.length} codici diversi registrati. L'abbinamento va controllato.` };
   }
   return { status: 'resolved', codice: codici[0] };
 }
@@ -81,26 +81,26 @@ export function productName(db: DatabaseSync, code: string): string | null {
 export function resolveIdentity(db: DatabaseSync, line: SourceLine): Identity {
   const sourceTitle = [line.title, line.variantTitle].filter(Boolean).join(' ');
   if (!line.sku || line.sku.trim() === '') {
-    return { status: 'unresolved', codice: null, ficName: null, reason: 'The source line has no SKU, so its FIC product is unknown.', sourceTitle };
+    return { status: 'unresolved', codice: null, ficName: null, reason: 'La riga non ha SKU, quindi il prodotto FIC non è noto.', sourceTitle };
   }
   const name = productName(db, line.sku);
   if (name === null) {
-    return { status: 'unresolved', codice: null, ficName: null, reason: `SKU ${line.sku} does not match any FIC Codice in the catalog on hand.`, sourceTitle };
+    return { status: 'unresolved', codice: null, ficName: null, reason: `Lo SKU ${line.sku} non corrisponde a nessun Codice FIC nel catalogo.`, sourceTitle };
   }
   return { status: 'resolved', codice: line.sku, ficName: name, reason: null, sourceTitle };
 }
 
 export function resolveVerification(db: DatabaseSync, codice: string, policies: Policies): Verification {
   if (policies.kitCodes.includes(codice)) {
-    return { method: 'none', barcodes: [], blockCode: 'kit_policy', reason: `${codice} is a kit. No verification policy has been approved yet.` };
+    return { method: 'none', barcodes: [], blockCode: 'kit_policy', reason: `${codice} è un kit. Non c'è ancora un modo approvato per verificarlo.` };
   }
   const barcodes = barcodesFor(db, codice);
   if (barcodes.length === 0) {
-    return { method: 'none', barcodes, blockCode: 'no_barcode', reason: `No barcode is on record for ${codice}, so it cannot be verified yet.` };
+    return { method: 'none', barcodes, blockCode: 'no_barcode', reason: `Nessun codice a barre registrato per ${codice}, quindi non si può ancora verificare.` };
   }
   const conflicted = barcodes.some((b) => lookupBarcode(db, b).status === 'conflict');
   if (conflicted) {
-    return { method: 'none', barcodes: [], blockCode: 'barcode_conflict', reason: `The barcode mapping for ${codice} conflicts and needs review.` };
+    return { method: 'none', barcodes: [], blockCode: 'barcode_conflict', reason: `I codici a barre di ${codice} sono in conflitto e vanno controllati.` };
   }
   return { method: 'barcode', barcodes, blockCode: null, reason: null };
 }
