@@ -85,6 +85,17 @@ enum PackingFlow {
         line.verification?.method == "barcode"
     }
 
+    /// Pieces that go in the box. Shipping rows are confirmed but not counted.
+    static func pieces(_ lines: [Line]) -> (counted: Int, total: Int) {
+        lines.filter { !$0.shipping }.reduce((0, 0)) { ($0.0 + $1.verified, $0.1 + $1.required) }
+    }
+
+    /// "Hai letto X (code)." for a wrong read. It never suggests the right product: a guess invites a second wrong pick.
+    static func wrongReadDetail(scan: Scan) -> String {
+        let read = [scan.productName, scan.codice.map { "(\($0))" }].compactMap { $0 }.joined(separator: " ")
+        return "Hai letto \(read.isEmpty ? scan.barcode : read)."
+    }
+
     static func canManualConfirm(_ line: Line) -> Bool {
         line.canManualConfirm
     }
