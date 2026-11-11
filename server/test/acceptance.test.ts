@@ -838,6 +838,12 @@ describe('web dashboard', () => {
     assert.doesNotMatch(html, /Cliente di prova/);
     const js = await app.request('/admin/app.js');
     assert.match(js.headers.get('content-type') ?? '', /javascript/);
-    assert.match(await js.text(), /textContent/);
+    const source = await js.text();
+    assert.match(source, /textContent/);
+    assert.match(source, /const PAGE = 15/);
+    assert.match(source, /pager\.hidden = true/);
+    assert.match(html, /id="pager"/);
+    assert.match(html, /Precedente/);
+    assert.match(html, /Successivo/);
   });
 });
