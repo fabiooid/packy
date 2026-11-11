@@ -69,12 +69,10 @@ struct WorkloadView: View {
             Button {
                 Task { await model.refresh() }
             } label: {
-                Label("Aggiorna ordini", systemImage: "arrow.clockwise")
-                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "arrow.clockwise")
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(Theme.accent)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .frame(minHeight: 44)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Aggiorna ordini")
