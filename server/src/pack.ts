@@ -79,6 +79,8 @@ export interface PackView {
   changes: Change[]; blockers: Blocker[]; canComplete: boolean;
   completedAt: number | null; completedByName: string | null; changedAfterCompletion: boolean; limitsNote: string;
   hasRecordedCount: boolean; canLeave: boolean;
+  /** Counted units exist but the order can never be completed, so the packer may empty the box and leave. */
+  canEmptyAndLeave: boolean;
 }
 
 function getOrder(db: DatabaseSync, source: string, orderId: string): OrderRow {
@@ -195,6 +197,7 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
 
   const hasRecordedCount = units.length > 0;
   const isOwner = pack.owner_user_id === user.id;
+  const cannotFinish = !order.eligible || lines.some((l) => l.state === 'blocked');
   return {
     id: pack.id, source: pack.source, orderId: pack.order_id, reference: order.reference, recipient: order.recipient,
     status: pack.status, version: pack.version, isOwner, ownerName: userName(db, pack.owner_user_id),
@@ -205,6 +208,7 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
     completedAt: pack.completed_at, completedByName: pack.completed_by ? userName(db, pack.completed_by) : null,
     changedAfterCompletion: pack.status === 'completed' && (changes.length > 0 || !order.eligible), limitsNote: LIMITS_NOTE,
     hasRecordedCount, canLeave: pack.status === 'active' && isOwner && !hasRecordedCount,
+    canEmptyAndLeave: pack.status === 'active' && isOwner && hasRecordedCount && cannotFinish,
   };
 }
 
@@ -296,8 +300,12 @@ function raiseDiscrepancy(ctx: Ctx, packId: string, kind: string, barcode: strin
   return id;
 }
 
-/** Classifies a camera read. It never adds credit. An eligible read only yields a single-use offer to confirm. */
-export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string, symbology: string | null): ScanResult {
+/**
+ * Classifies a camera read. It never adds credit. An eligible read only yields a single-use offer to confirm.
+ * Wrong, extra, unknown and unclear reads are reported and earn nothing, but they do not block the order:
+ * the packer is not asked to account for the item. Product decision, 2026-11-11.
+ */
+export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string, symbology: string | null, selectedLineId: string | null = null): ScanResult {
   if (typeof barcode !== 'string' || barcode.length === 0 || barcode.length > 128) throw new ApiError(400, 'bad_barcode', 'La scansione era vuota o non valida.');
   return tx(ctx.db, () => {
     const { pack, view } = guardWrite(ctx, packId, user, null);
@@ -309,39 +317,37 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
     let codice: string | null = null;
     let name: string | null = null;
     let message: string;
-    let discrepancyId: string | null = null;
+    const discrepancyId: string | null = null;
     let unitNumber: number | null = null;
     let required: number | null = null;
     let recheck = false;
     let expiresAt: number | null = null;
 
+    // When the packer has chosen a product, a read only matches that line. Anything else is wrong.
+    const selected = selectedLineId ? view.lines.find((l) => l.lineId === selectedLineId) ?? null : null;
+    if (selectedLineId && !selected) throw new ApiError(400, 'bad_line', 'Il prodotto scelto non è in questo ordine.', { pack: view });
     const needed = stillNeeded(view);
     const lookup = lookupBarcode(ctx.db, barcode);
 
     if (lookup.status === 'unknown') {
       outcome = 'unknown_code';
       message = 'Questo codice non è collegato a nessun prodotto. Non contato.';
-      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Codice sconosciuto ${barcode}`, 'Se questo pezzo è nella scatola, toglilo. Resta irrisolto finché non lo sistemerai.');
     } else if (lookup.status === 'conflict') {
       outcome = 'ambiguous_code';
       message = `${lookup.reason} Non contato.`;
-      discrepancyId = raiseDiscrepancy(ctx, pack.id, outcome, barcode, null, `Codice in conflitto ${barcode}`, `${lookup.reason} Se questo pezzo è nella scatola, toglilo.`);
     } else {
       codice = lookup.codice;
       name = productName(ctx.db, codice);
-      const matching = view.lines.filter((l) => l.identity.codice === codice);
+      const matching = view.lines.filter((l) => l.identity.codice === codice && (!selected || l.lineId === selected.lineId));
       const open = matching.find((l) => l.state !== 'blocked' && (l.uncertain > 0 || l.remaining > 0));
       const label = `${codice} ${name ?? '(non nel catalogo FIC)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
-        message = needed
+        message = selected
+          ? `Prodotto sbagliato. Non contato. Stai scansionando ${productLabel(selected.identity.codice, selected.identity.ficName, selected.identity.sourceTitle)}.`
+          : needed
           ? `Prodotto sbagliato. Non contato. A questo ordine manca ancora ${needed}.`
           : `Prodotto sbagliato. Non contato. ${productLabel(codice, name)} non è in questo ordine.`;
-        discrepancyId = raiseDiscrepancy(
-          ctx, pack.id, outcome, barcode, codice,
-          `Prodotto sbagliato: ${productLabel(codice, name)}`,
-          `${productLabel(codice, name)} non è in questo ordine. Non contato. Occupati del pezzo fisico.`,
-        );
       } else if (matching.every((l) => l.state === 'blocked')) {
         outcome = 'line_blocked';
         message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'Questa riga non si può ancora verificare.';
@@ -357,11 +363,6 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
         outcome = 'excess';
         const total = matching.reduce((sum, l) => sum + l.required, 0);
         message = `${productLabel(codice, name)}: pezzo in più. L'ordine ne richiede ${total}. Non contato.`;
-        discrepancyId = raiseDiscrepancy(
-          ctx, pack.id, outcome, barcode, codice,
-          `Extra item: ${productLabel(codice, name)}`,
-          `${productLabel(codice, name)} è in più. L'ordine ne richiede ${total}. Non contato. Occupati del pezzo fisico.`,
-        );
       }
     }
 
@@ -465,7 +466,7 @@ function markAllUncertain(ctx: Ctx, packId: string): void {
 
 function requireCurrentVersion(ctx: Ctx, pack: PackRow, user: User, version: number): void {
   if (pack.version !== version) {
-    throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.', { pack: buildView(ctx, pack, user) });
+    throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.', { pack: buildView(ctx, pack, user) });
   }
 }
 
@@ -512,19 +513,26 @@ export function reopen(ctx: Ctx, user: User, packId: string, actionId: string, v
   });
 }
 
-/** The operator states the box is empty. All credit goes and the record closes. */
+/** Start the order over: every count goes back to 0. The packer stays on the order and must empty the box. */
+export function restart(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
+  return idempotent(ctx, actionId, packId, () => {
+    const { pack } = guardWrite(ctx, packId, user, version);
+    ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'restarted' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
+    ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'restarted', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
+    logEvent(ctx, pack.id, 'restarted', user.id);
+    bump(ctx, pack.id);
+    return viewPack(ctx, pack.id, user);
+  });
+}
+
+/** The operator states the box is empty ("Cancella"). All credit goes, the record closes and the order is ready to pack again. */
 export function release(ctx: Ctx, user: User, packId: string, actionId: string, version: number): { released: true } {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
     if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
     if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi sta imballando può svuotare la scatola.');
-    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.');
-    if (pack.status === 'active') {
-      const counted = ctx.db.prepare(`SELECT id FROM units WHERE pack_id = ? AND status != 'removed' LIMIT 1`).get(pack.id);
-      if (counted) {
-        throw new ApiError(409, 'session_locked', 'Questo ordine ha già un conteggio. Resta su questo finché non è imballato.', { pack: buildView(ctx, pack, user) });
-      }
-    }
+    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.');
+    // "Cancella" on the order list: the owner confirms the box is empty, counts go and the order is free again.
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'box_emptied', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE packs SET status = 'released' WHERE id = ?`).run(pack.id);
