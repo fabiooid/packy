@@ -93,18 +93,6 @@ struct PackScreen: View {
                                 .accessibilityHint(canSelect(line) ? "Scegli questo prodotto da scansionare" : "")
                         }
                     }
-                    ForEach(pack.nonPhysical) { row in
-                        Label("\(row.title) · nessuna scansione", systemImage: "shippingbox.and.arrow.backward")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                    }
-                    Text(pack.limitsNote)
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)

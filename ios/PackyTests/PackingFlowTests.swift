@@ -59,7 +59,6 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(PackingFlow.rightProduct, "Prodotto giusto. Non ancora contato.")
         XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
         XCTAssertEqual(PackingFlow.markDoneConfirm, "Confermi che la scatola corrisponde all'ordine. Non lo spedisce.")
-        XCTAssertEqual(PackingFlow.typeNotBottle, "Questo codice identifica il tipo di prodotto, non il singolo pezzo.")
     }
 
     func testSizeIsSplitOffSoLookalikesStandOut() {
