@@ -59,4 +59,25 @@ enum PackingFlow {
     static func wrongProductMessage(stillNeeds: String) -> String {
         "Prodotto sbagliato. Non contato. A questo ordine manca ancora \(stillNeeds)."
     }
+
+    /// Splits a trailing size off a product name, so the size can be shown as its own badge.
+    /// "Cardamomo Sapone Mani 250ml" becomes ("Cardamomo Sapone Mani", "250 ml").
+    static func splitSize(_ name: String) -> (name: String, size: String?) {
+        let pattern = #"^(.*?)[\s,]*(\d+(?:[.,]\d+)?)\s?(ml|g|kg|l|oz)\.?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let base = Range(match.range(at: 1), in: name),
+              let amount = Range(match.range(at: 2), in: name),
+              let unit = Range(match.range(at: 3), in: name),
+              !name[base].trimmingCharacters(in: .whitespaces).isEmpty
+        else { return (name, nil) }
+        return (name[base].trimmingCharacters(in: .whitespaces), "\(name[amount]) \(name[unit].lowercased())")
+    }
+
+    /// Units still to count across the order, including ones that must be checked again.
+    static func unitsStillToDo(_ lines: [Line]) -> Int {
+        lines.reduce(0) { $0 + $1.remaining + $1.uncertain }
+    }
+
+    static func unitWord(_ count: Int) -> String { count == 1 ? "pezzo" : "pezzi" }
 }

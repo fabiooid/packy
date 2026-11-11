@@ -62,6 +62,16 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(PackingFlow.typeNotBottle, "Questo codice identifica il tipo di prodotto, non il singolo pezzo.")
     }
 
+    func testSizeIsSplitOffSoLookalikesStandOut() {
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").name, "Cardamomo Sapone Mani")
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").size, "250 ml")
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 500 ML").size, "500 ml")
+        XCTAssertEqual(PackingFlow.splitSize("Candela 200g").size, "200 g")
+        XCTAssertNil(PackingFlow.splitSize("Travel Kit").size)
+        XCTAssertEqual(PackingFlow.splitSize("Travel Kit").name, "Travel Kit")
+        XCTAssertNil(PackingFlow.splitSize("250ml").size, "A bare size has no name to split from")
+    }
+
     private func order(id: String, reference: String, eligible: Bool, packStatus: String?, isOwner: Bool = false) -> WorkloadOrder {
         WorkloadOrder(
             source: "fixture",
