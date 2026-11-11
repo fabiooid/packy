@@ -61,6 +61,16 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(PackingFlow.markDoneConfirm, "Confermi che la scatola corrisponde all'ordine. Non lo spedisce.")
     }
 
+    func testBarcodelessLinesUseManualConfirmInsteadOfScan() {
+        let promo = line(method: "manual", canManualConfirm: true)
+        let soap = line(method: "barcode", canManualConfirm: false)
+        XCTAssertFalse(PackingFlow.needsScan(promo))
+        XCTAssertTrue(PackingFlow.canManualConfirm(promo))
+        XCTAssertTrue(PackingFlow.needsScan(soap))
+        XCTAssertFalse(PackingFlow.canManualConfirm(soap))
+        XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
+    }
+
     func testSizeIsSplitOffSoLookalikesStandOut() {
         XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").name, "Cardamomo Sapone Mani")
         XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").size, "250 ml")
@@ -69,6 +79,29 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertNil(PackingFlow.splitSize("Travel Kit").size)
         XCTAssertEqual(PackingFlow.splitSize("Travel Kit").name, "Travel Kit")
         XCTAssertNil(PackingFlow.splitSize("250ml").size, "A bare size has no name to split from")
+    }
+
+    private func line(method: String, canManualConfirm: Bool) -> Line {
+        Line(
+            lineId: "x",
+            kind: "physical",
+            kindReason: nil,
+            required: 1,
+            verified: 0,
+            uncertain: 0,
+            remaining: 1,
+            state: "todo",
+            identity: Identity(
+                status: method == "barcode" ? "resolved" : "unresolved",
+                codice: method == "barcode" ? "MS001" : nil,
+                ficName: method == "barcode" ? "Sapone" : nil,
+                reason: nil,
+                sourceTitle: "Materiale promozionale"
+            ),
+            verification: Verification(method: method, reason: nil),
+            units: [],
+            canManualConfirm: canManualConfirm
+        )
     }
 
     private func order(id: String, reference: String, eligible: Bool, packStatus: String?, isOwner: Bool = false) -> WorkloadOrder {

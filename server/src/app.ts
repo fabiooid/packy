@@ -82,7 +82,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
   });
   app.post('/v1/packs/:id/confirm', async (c) => {
     const b = await body(c);
-    return c.json(packing.confirmUnit(ctx, c.get('user'), c.req.param('id'), str(b.scanId), str(b.actionId), num(b.version)));
+    return c.json(packing.confirmUnit(ctx, c.get('user'), c.req.param('id'), str(b.scanId), str(b.actionId), num(b.version), typeof b.lineId === 'string' && b.lineId ? b.lineId : null));
   });
   app.post('/v1/packs/:id/units/:unitId/remove', async (c) => {
     const b = await body(c);

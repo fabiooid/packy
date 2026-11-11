@@ -16,15 +16,17 @@ const order = (id: string, reference: string, partial: Partial<SourceOrder>): So
 export function fixtureOrders(): SourceOrder[] {
   return [
     order('f1', '#FIX-1001', {
-      lines: [physical('f1-a', 'MS001', 'Sapone mani piccolo', 3), physical('f1-b', 'MS024', 'Candela', 1)],
-      nonPhysical: [{ title: 'Express', reason: 'Spedizione' }],
+      lines: [physical('f1-a', 'MS001', 'Sapone mani piccolo', 3), physical('f1-b', 'MS024', 'Candela', 1), physical('f1-ship', null, 'Express', 1)],
     }),
     order('f2', '#FIX-1002 free sample', {
-      lines: [physical('f2-a', 'MS002', 'Sapone mani grande', 1), physical('f2-b', 'MS040', 'SAMPLE gratis', 1)],
-      nonPhysical: [{ title: 'Standard', reason: 'Spedizione' }],
+      lines: [physical('f2-a', 'MS002', 'Sapone mani grande', 1), physical('f2-b', 'MS040', 'SAMPLE gratis', 1), physical('f2-ship', null, 'Standard', 1)],
     }),
     order('f3', '#FIX-1003 blank SKU', {
-      lines: [physical('f3-a', null, 'Discovery Set / Profumi in Olio', 1), physical('f3-b', 'MS001', 'Sapone mani', 1)],
+      lines: [
+        physical('f3-a', null, 'Discovery Set / Profumi in Olio', 1),
+        physical('f3-b', 'MS001', 'Sapone mani', 1),
+        physical('f3-promo', null, 'Materiale promozionale', 2),
+      ],
     }),
     order('f4', '#FIX-1004 kit', { lines: [physical('f4-a', 'MS010', 'Travel Kit', 1)] }),
     order('f5', '#FIX-1005 uncertain row', {

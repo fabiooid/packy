@@ -79,4 +79,13 @@ enum PackingFlow {
     }
 
     static func unitWord(_ count: Int) -> String { count == 1 ? "pezzo" : "pezzi" }
+
+    /// Barcoded lines still go through scan then Aggiungi. Everything else with no usable barcode is confirmed by hand.
+    static func needsScan(_ line: Line) -> Bool {
+        line.verification?.method == "barcode"
+    }
+
+    static func canManualConfirm(_ line: Line) -> Bool {
+        line.canManualConfirm
+    }
 }

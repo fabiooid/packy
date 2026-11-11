@@ -79,7 +79,7 @@ struct PackScreen: View {
                     changes
                     openProblems
                     VStack(spacing: 10) {
-                        if pack.canScan { SectionLabel("Scegli il prodotto da scansionare") }
+                        if pack.canScan { SectionLabel("Scegli il prodotto") }
                         ForEach(pack.lines) { line in
                             LineCard(line: line, highlighted: line.lineId == selectedLine?.lineId, canRemove: ownsActive) { removing = line }
                                 .opacity(canSelect(line) || line.lineId == selectedLine?.lineId ? 1 : 0.6)
@@ -90,7 +90,7 @@ struct PackScreen: View {
                                     model.card = .idle
                                 }
                                 .accessibilityAddTraits(canSelect(line) ? [.isButton] : [])
-                                .accessibilityHint(canSelect(line) ? "Scegli questo prodotto da scansionare" : "")
+                                .accessibilityHint(canSelect(line) ? "Scegli questo prodotto" : "")
                         }
                     }
                 }
@@ -139,7 +139,7 @@ struct PackScreen: View {
                 .lineLimit(1)
                 .padding(.horizontal, 12)
             }
-            if pack.canScan, let line = selectedLine {
+            if pack.canScan, let line = selectedLine, PackingFlow.needsScan(line) {
                 VStack(spacing: 2) {
                     Text("Scansiona").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
                     Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
@@ -147,12 +147,23 @@ struct PackScreen: View {
                 ScannerPanel { code, symbology in model.handleRead(code, symbology: symbology) }
                     .frame(height: 200)
                     .id(line.lineId)
+            } else if pack.canScan, let line = selectedLine {
+                VStack(spacing: 14) {
+                    Text(scanTitle(line)).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    Button {
+                        Task { await model.confirmManual(line) }
+                    } label: {
+                        Label(PackingFlow.countAction, systemImage: "plus")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(height: 54))
+                    .disabled(model.busy || !PackingFlow.canManualConfirm(line))
+                    .padding(.horizontal, 8)
+                }
+                .frame(maxWidth: .infinity, minHeight: 200)
             } else if pack.canScan {
                 VStack(spacing: 10) {
                     Image(systemName: "hand.tap").font(.system(size: 30, weight: .medium))
                     Text("Scegli un prodotto qui sotto").font(.headline)
-                    Text("La fotocamera si accende quando scegli cosa scansionare.")
-                        .font(.footnote).multilineTextAlignment(.center).opacity(0.75)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 200)
@@ -224,8 +235,6 @@ struct PackScreen: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(countedUnits) di \(totalUnits) nella scatola").font(Theme.display(26)).foregroundStyle(Theme.ink)
                 Spacer()
-                let left = PackingFlow.unitsStillToDo(pack.lines)
-                if left > 0 { Text("ne mancano \(left)").font(.subheadline).foregroundStyle(Theme.secondary) }
             }
             ProgressBar(done: countedUnits, total: totalUnits)
         }
@@ -261,9 +270,7 @@ struct PackScreen: View {
     }
 
     private var footer: some View {
-        let left = PackingFlow.unitsStillToDo(pack.lines)
-        let text = left > 0 ? "Scansiona ancora \(left) per finire" : "Non ancora pronto"
-        return Button(text) {}
+        Button("Non ancora pronto") {}
             .buttonStyle(PrimaryButtonStyle())
             .disabled(true)
             .padding(.horizontal, 20)
@@ -327,17 +334,11 @@ struct LineCard: View {
     var onRemove: () -> Void = {}
 
     var body: some View {
-        let parts = PackingFlow.splitSize(line.identity.ficName ?? "")
+        let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
-                if line.identity.ficName != nil {
-                    Text(parts.name).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text("Non identificato").font(Theme.display(20)).foregroundStyle(Theme.warning)
-                    Text("Titolo della fonte, non il nome ufficiale: \(line.identity.sourceTitle)")
-                        .font(.footnote).foregroundStyle(Theme.secondary)
-                }
+                Text(parts.name).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 10) {
                     if let size = parts.size { SizeBadge(size: size, strong: highlighted || line.state != "done") }
                     if let codice = line.identity.codice {
@@ -348,7 +349,7 @@ struct LineCard: View {
             ForEach(reasons, id: \.self) { reason in
                 Label(reason, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Theme.warning)
             }
-            if highlighted {
+            if highlighted, PackingFlow.needsScan(line) {
                 Label("In scansione", systemImage: "barcode.viewfinder")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.accent)
@@ -580,8 +581,10 @@ private struct ReadyView: View {
                                 Circle().fill(Theme.success).frame(width: 26, height: 26)
                                     .overlay(Image(systemName: "checkmark").font(.caption.weight(.heavy)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(line.identity.codice ?? "").font(Theme.code(16)).foregroundStyle(Theme.ink)
-                                    Text(line.identity.ficName ?? "").font(.footnote).foregroundStyle(Theme.secondary)
+                                    Text(line.identity.ficName ?? line.identity.sourceTitle).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
+                                    if let codice = line.identity.codice {
+                                        Text(codice).font(.footnote).foregroundStyle(Theme.secondary)
+                                    }
                                 }
                                 Spacer()
                                 Text(PackingFlow.countLabel(verified: line.verified, required: line.required))

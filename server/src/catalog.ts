@@ -17,7 +17,7 @@ export interface Identity {
 }
 
 export interface Verification {
-  method: 'barcode' | 'none';
+  method: 'barcode' | 'manual' | 'none';
   barcodes: string[];
   blockCode: 'no_barcode' | 'kit_policy' | 'barcode_conflict' | null;
   reason: string | null;
@@ -96,7 +96,7 @@ export function resolveVerification(db: DatabaseSync, codice: string, policies: 
   }
   const barcodes = barcodesFor(db, codice);
   if (barcodes.length === 0) {
-    return { method: 'none', barcodes, blockCode: 'no_barcode', reason: `Nessun codice a barre registrato per ${codice}, quindi non si può ancora verificare.` };
+    return { method: 'manual', barcodes, blockCode: 'no_barcode', reason: null };
   }
   const conflicted = barcodes.some((b) => lookupBarcode(db, b).status === 'conflict');
   if (conflicted) {
