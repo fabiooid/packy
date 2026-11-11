@@ -246,7 +246,7 @@ private struct OrderRow: View {
                     .font(.footnote).foregroundStyle(Theme.secondary)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color(hex: 0x8A8D94))
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

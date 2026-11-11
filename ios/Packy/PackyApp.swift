@@ -34,14 +34,15 @@ struct LoginView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 18) {
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Theme.accent)
-                        .frame(width: 64, height: 64)
-                        .overlay(Image(systemName: "shippingbox").font(.system(size: 30, weight: .medium)).foregroundStyle(.white))
+                    Image("LoginMark")
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 96)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Packy").font(Theme.display(40)).foregroundStyle(Theme.ink)
-                        Text(PackingFlow.signInPurpose).font(.title3).foregroundStyle(Theme.body)
+                        Text("Packy").font(Theme.display(40)).foregroundStyle(Theme.cream)
+                        Text(PackingFlow.signInPurpose).font(.title3).foregroundStyle(Theme.cream.opacity(0.92))
                     }
                 }
 
@@ -59,6 +60,9 @@ struct LoginView: View {
                         Label(error, systemImage: "exclamationmark.circle.fill")
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.danger)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 14))
                     }
                     Button {
                         working = true
@@ -68,34 +72,38 @@ struct LoginView: View {
                             working = false
                         }
                     } label: {
-                        if working { ProgressView().tint(.white) } else { Text("Accedi") }
+                        if working { ProgressView().tint(Theme.brandDeep) } else { Text("Accedi") }
                     }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .buttonStyle(PrimaryButtonStyle(color: Theme.cream, foreground: Theme.brandDeep))
                     .disabled(working || username.isEmpty || password.isEmpty)
                     .padding(.top, 6)
                 }
 
                 Text("Hai dimenticato l'accesso? Chiedi a chi gestisce Packy.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(Theme.cream.opacity(0.8))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 24)
             }
             .padding(.horizontal, 24)
             .padding(.top, 56)
         }
-        .background(Theme.ground.ignoresSafeArea())
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(colors: [Theme.brand, Theme.brandDeep], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        )
     }
 
     private func field<Content: View>(_ label: String, @ViewBuilder input: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
+            Text(label).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.cream)
             input()
                 .font(.title3)
                 .foregroundStyle(Theme.ink)
                 .padding(.horizontal, 16)
                 .frame(height: 54)
-                .card(border: Color(hex: 0xD6D3CC), width: 1.5, radius: 14)
+                .card(border: Theme.line, width: 1.5, radius: 14)
         }
     }
 }
