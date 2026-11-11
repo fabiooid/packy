@@ -88,4 +88,12 @@ enum PackingFlow {
     static func canManualConfirm(_ line: Line) -> Bool {
         line.canManualConfirm
     }
+
+    /// Aggiungi in the camera header. A barcoded line needs a matching eligible scan first; a barcodeless line does not.
+    static func canConfirmFromHeader(line: Line, pendingScan: Scan?) -> Bool {
+        if needsScan(line) {
+            return pendingScan?.outcome == "eligible" && pendingScan?.lineId == line.lineId
+        }
+        return canManualConfirm(line)
+    }
 }

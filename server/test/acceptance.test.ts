@@ -239,6 +239,20 @@ describe('product-first scanning', () => {
     assert.equal(bad.status, 400);
     assert.equal(bad.json.error.code, 'bad_line');
   });
+
+  test('after a matching scan, confirm records one unit; without a scan a barcoded line cannot be confirmed', async () => {
+    let p = await open(ana, 'f1');
+    const soap = p.lines.find((l: any) => l.lineId === 'f1-a');
+    const skipped = await confirmManual(ana, p, soap.lineId);
+    assert.equal(skipped.status, 409);
+    assert.equal(skipped.json.error.code, 'scan_required');
+    assert.equal(skipped.json.pack.lines.find((l: any) => l.lineId === 'f1-a').verified, 0);
+    const s = await scanFor(ana, p, MS001, 'f1-a');
+    assert.equal(s.json.scan.outcome, 'eligible');
+    assert.equal(s.json.pack.lines.find((l: any) => l.lineId === 'f1-a').verified, 0);
+    p = (await confirm(ana, s.json.pack, s.json.scan.id)).json;
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-a').verified, 1);
+  });
 });
 
 describe('restart from 0', () => {
