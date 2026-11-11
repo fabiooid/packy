@@ -71,7 +71,7 @@ final class PackModel {
             pack = try await post("confirm", extra: ["scanId": scan.id], actionId: actionId)
             let counted = scan.unitNumber ?? 1
             let required = scan.required ?? counted
-            card = .recorded("Counted. \(counted) of \(required)")
+            card = .recorded("Counted. \(PackingFlow.countLabel(verified: counted, required: required))")
             Feedback.recorded()
         } catch APIFailure.unreachable {
             card = .unknownResult(scan: scan, actionId: actionId)

@@ -138,16 +138,19 @@ final class ScannerHost: UIViewController, DataScannerViewControllerDelegate {
 
 #if targetEnvironment(simulator)
 /// The Simulator has no camera. This panel does not exist in device builds.
+/// It stands in for the live viewfinder and still follows the confirm path.
 private struct SimulatedScanner: View {
     let onRead: (String, String?) -> Void
     private let codes = [("MS001", "8050038450997"), ("MS002", "8050038450980"), ("MS024", "0806812399109"), ("MS040", "0806812399192"), ("Unknown", "0000000000000")]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SIMULATOR ONLY: pretend camera reads").font(.caption.bold()).foregroundStyle(.yellow)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(PackingFlow.cameraSimulator)
+                .font(.caption)
+                .foregroundStyle(.white)
             ForEach(codes, id: \.1) { code in
-                Button("\(code.0)  \(code.1)") { onRead(code.1, "simulated") }
-                    .font(.caption.monospaced())
+                Button(code.0) { onRead(code.1, "simulated") }
+                    .font(.subheadline.monospaced())
                     .foregroundStyle(.white)
             }
         }

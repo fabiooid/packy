@@ -39,24 +39,21 @@ struct PackScreen: View {
         .refreshable { await model.refresh() }
         .safeAreaInset(edge: .bottom) { footer }
         .toolbar {
-            if pack.status == "active" && pack.isOwner {
+            if pack.canLeave {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Stop") { confirmingEmpty = true }
-                        .accessibilityLabel("Stop and put items back")
+                    Button(PackingFlow.leaveAction) { confirmingEmpty = true }
                 }
             }
         }
         .confirmationDialog("Mark \(pack.reference) as done?", isPresented: $confirmingComplete, titleVisibility: .visible) {
             Button("Mark as done") { Task { await model.completeAfterRefresh() } }
         } message: {
-            Text("You are saying the box matches this order. This does not ship it.")
+            Text(PackingFlow.markDoneConfirm)
         }
-        .confirmationDialog("Stop and put items back?", isPresented: $confirmingEmpty, titleVisibility: .visible) {
-            Button("Stop and put items back", role: .destructive) {
+        .confirmationDialog(PackingFlow.leaveAction, isPresented: $confirmingEmpty, titleVisibility: .visible) {
+            Button(PackingFlow.leaveAction) {
                 Task { if await model.emptyBox() { dismiss() } }
             }
-        } message: {
-            Text("The count will be cleared. Put every item back. This order will look not started.")
         }
         .confirmationDialog("Pack \(pack.reference) again from the start?", isPresented: $confirmingAgain, titleVisibility: .visible) {
             Button("Pack this again", role: .destructive) {
@@ -148,14 +145,20 @@ struct PackScreen: View {
         }
     }
 
-    private var orderedLines: [Line] {
-        pack.lines.sorted { ($0.state == "done" ? 1 : 0) < ($1.state == "done" ? 1 : 0) }
+    private var highlightedLineId: String? {
+        if case .offer(let scan) = model.card { return scan.lineId }
+        return nil
     }
 
     @ViewBuilder private var lines: some View {
         SectionTitle("Items")
-        ForEach(orderedLines) { line in
-            LineRow(line: line, canRemove: pack.isOwner && pack.status == "active") { removing = line }
+        Text(PackingFlow.productListHint).font(.subheadline).foregroundStyle(.secondary)
+        ForEach(pack.lines) { line in
+            LineRow(
+                line: line,
+                highlighted: line.id == highlightedLineId,
+                canRemove: pack.isOwner && pack.status == "active"
+            ) { removing = line }
         }
     }
 
@@ -239,7 +242,7 @@ private struct ScanCardView: View {
     var body: some View {
         switch model.card {
         case .idle:
-            Text("Point at one bottle.")
+            Text(PackingFlow.cameraWaiting)
                 .font(.subheadline).foregroundStyle(.secondary)
         case .checking(let code):
             HStack {
@@ -248,14 +251,14 @@ private struct ScanCardView: View {
             }
         case .offer(let scan):
             VStack(alignment: .leading, spacing: 8) {
-                Label("Right bottle. Not counted yet.", systemImage: "barcode.viewfinder").font(.subheadline.bold()).foregroundStyle(.blue)
+                Label(PackingFlow.rightProduct, systemImage: "barcode.viewfinder").font(.subheadline.bold()).foregroundStyle(.blue)
                 Text(scan.codice ?? "").font(.title.bold().monospaced())
                 Text(scan.productName ?? "").font(.headline)
                 Text("\(scan.unitNumber ?? 1) of \(scan.required ?? 1)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 Button {
                     Task { await model.confirm(scan) }
                 } label: {
-                    Text("Count this bottle").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 10)
+                    Text(PackingFlow.countAction).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.busy)
@@ -266,6 +269,12 @@ private struct ScanCardView: View {
         case .rejected(let scan):
             VStack(alignment: .leading, spacing: 6) {
                 Label(title(scan), systemImage: "xmark.octagon.fill").font(.headline).foregroundStyle(.red)
+                if let codice = scan.codice, !codice.isEmpty {
+                    Text(codice).font(.title.bold().monospaced())
+                }
+                if let name = scan.productName, !name.isEmpty {
+                    Text(name).font(.headline)
+                }
                 Text(scan.message).font(.subheadline)
                 Text("Code \(scan.barcode)").font(.caption.monospaced()).foregroundStyle(.secondary)
                 if let item = model.pack.discrepancies.first(where: { $0.id == scan.discrepancyId }) {
@@ -292,7 +301,7 @@ private struct ScanCardView: View {
 
     private func title(_ scan: Scan) -> String {
         switch scan.outcome {
-        case "wrong_product": "Wrong bottle. Not counted."
+        case "wrong_product": PackingFlow.wrongProductTitle
         case "excess": "Already done. Not counted."
         case "unknown_code": "Unknown code. Not counted."
         case "ambiguous_code": "Unclear code. Not counted."
@@ -303,27 +312,29 @@ private struct ScanCardView: View {
 
 private struct LineRow: View {
     let line: Line
+    var highlighted = false
     let canRemove: Bool
     let onRemove: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                if let codice = line.identity.codice {
-                    Text(codice).font(.title3.bold().monospaced())
-                } else {
-                    Text("Unresolved").font(.title3.bold()).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let name = line.identity.ficName {
+                        Text(name).font(.subheadline)
+                    } else {
+                        Text("Source title, not an official name: \(line.identity.sourceTitle)").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let codice = line.identity.codice {
+                        Text(codice).font(.title3.bold().monospaced())
+                    } else {
+                        Text("Unresolved").font(.title3.bold()).foregroundStyle(.orange)
+                    }
                 }
                 Spacer()
-                Text(line.state == "done" ? "Done" : "To do")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(line.state == "done" ? .green : .secondary)
-            }
-            Text("\(line.verified) of \(line.required)").font(.title3.bold().monospacedDigit()).foregroundStyle(countColor)
-            if let name = line.identity.ficName {
-                Text(name).font(.subheadline)
-            } else {
-                Text("Source title, not an FIC name: \(line.identity.sourceTitle)").font(.footnote).foregroundStyle(.secondary)
+                Text(PackingFlow.countLabel(verified: line.verified, required: line.required))
+                    .font(.title3.bold().monospacedDigit())
+                    .foregroundStyle(countColor)
             }
             ForEach(reasons, id: \.self) { Label($0, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.orange) }
             if line.uncertain > 0 {
@@ -333,7 +344,7 @@ private struct LineRow: View {
                 Button("Take one out", action: onRemove).font(.footnote)
             }
         }
-        .cardStyle(border: borderColor)
+        .cardStyle(border: highlighted ? .blue : borderColor)
     }
 
     private var reasons: [String] {

@@ -58,27 +58,9 @@ final class AppModel {
         }
     }
 
-    /// After a full app close, drop any unfinished order still on the server. Returns the order reference if it was cleared.
-    func clearUnfinishedOrderAfterColdStart() async -> String? {
-        guard let workload else { return nil }
-        guard let order = workload.orders.first(where: { $0.packStatus == "active" && $0.isOwner }),
-              let packId = order.packId else { return nil }
-        do {
-            let pack: Pack = try await api.send("GET", "v1/packs/\(packId)")
-            guard pack.status == "active" else { return nil }
-            let _: EmptyResponse = try await api.send(
-                "POST",
-                "v1/packs/\(packId)/release",
-                body: ["actionId": UUID().uuidString, "version": pack.version]
-            )
-            await refresh()
-            return order.reference
-        } catch APIFailure.signedOut {
-            signOutLocally()
-            return nil
-        } catch {
-            return nil
-        }
+    /// The packing session that must resume after the app is closed mid-order.
+    func activeOwnedOrder() -> WorkloadOrder? {
+        PackingFlow.activeOwnedOrder(workload?.orders ?? [])
     }
 }
 
