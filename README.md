@@ -1,4 +1,4 @@
-<img src="ios/Packy/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="Packy" width="96">
+<img src="ios/Packy/Assets.xcassets/LoginMark.imageset/LoginMark.png" alt="Packy" width="96">
 
 # Packy
 
