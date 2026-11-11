@@ -35,7 +35,7 @@ final class PackModel {
     }
 
     func handleRead(_ barcode: String, symbology: String?) {
-        guard pack.canScan, selectedLineId != nil else { return }
+        guard pack.canScan, let id = selectedLineId, let line = pack.lines.first(where: { $0.lineId == id }), PackingFlow.needsScan(line) else { return }
         if busy {
             queuedRead = (barcode, symbology)
             return
@@ -82,6 +82,25 @@ final class PackModel {
         } catch APIFailure.unreachable {
             card = .unknownResult(scan: scan, actionId: actionId)
             Feedback.rejected()
+        } catch {
+            handle(error, fallback: "Non è stato registrato nulla.")
+        }
+    }
+
+    func confirmManual(_ line: Line, actionId: String = UUID().uuidString) async {
+        guard !busy, PackingFlow.canManualConfirm(line) else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            pack = try await post("confirm", extra: ["lineId": line.lineId], actionId: actionId)
+            let updated = pack.lines.first(where: { $0.lineId == line.lineId })
+            let counted = updated?.verified ?? line.verified
+            let required = updated?.required ?? line.required
+            card = .recorded("Contato. \(PackingFlow.countLabel(verified: counted, required: required))")
+            if let selected = selectedLineId, pack.lines.first(where: { $0.lineId == selected })?.state == "done" {
+                selectedLineId = nil
+            }
+            Feedback.recorded()
         } catch {
             handle(error, fallback: "Non è stato registrato nulla.")
         }

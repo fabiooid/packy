@@ -59,7 +59,79 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(PackingFlow.rightProduct, "Prodotto giusto. Non ancora contato.")
         XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
         XCTAssertEqual(PackingFlow.markDoneConfirm, "Confermi che la scatola corrisponde all'ordine. Non lo spedisce.")
-        XCTAssertEqual(PackingFlow.typeNotBottle, "Questo codice identifica il tipo di prodotto, non il singolo pezzo.")
+    }
+
+    func testBarcodelessLinesUseManualConfirmInsteadOfScan() {
+        let promo = line(method: "manual", canManualConfirm: true)
+        let soap = line(method: "barcode", canManualConfirm: false)
+        XCTAssertFalse(PackingFlow.needsScan(promo))
+        XCTAssertTrue(PackingFlow.canManualConfirm(promo))
+        XCTAssertTrue(PackingFlow.needsScan(soap))
+        XCTAssertFalse(PackingFlow.canManualConfirm(soap))
+        XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
+    }
+
+    func testHeaderAddOnBarcodedLineNeedsAMatchingScan() {
+        let soap = line(id: "f1-a", method: "barcode", canManualConfirm: false)
+        XCTAssertFalse(PackingFlow.canConfirmFromHeader(line: soap, pendingScan: nil))
+        XCTAssertTrue(PackingFlow.canConfirmFromHeader(line: soap, pendingScan: scan(outcome: "eligible", lineId: "f1-a")))
+        XCTAssertFalse(PackingFlow.canConfirmFromHeader(line: soap, pendingScan: scan(outcome: "eligible", lineId: "f1-b")))
+        XCTAssertFalse(PackingFlow.canConfirmFromHeader(line: soap, pendingScan: scan(outcome: "wrong_product", lineId: "f1-a")))
+    }
+
+    func testHeaderAddOnBarcodelessLineDoesNotNeedAScan() {
+        let promo = line(id: "f3-promo", method: "manual", canManualConfirm: true)
+        XCTAssertTrue(PackingFlow.canConfirmFromHeader(line: promo, pendingScan: nil))
+        XCTAssertEqual(PackingFlow.countAction, "Aggiungi")
+    }
+
+    func testSizeIsSplitOffSoLookalikesStandOut() {
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").name, "Cardamomo Sapone Mani")
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 250ml").size, "250 ml")
+        XCTAssertEqual(PackingFlow.splitSize("Cardamomo Sapone Mani 500 ML").size, "500 ml")
+        XCTAssertEqual(PackingFlow.splitSize("Candela 200g").size, "200 g")
+        XCTAssertNil(PackingFlow.splitSize("Travel Kit").size)
+        XCTAssertEqual(PackingFlow.splitSize("Travel Kit").name, "Travel Kit")
+        XCTAssertNil(PackingFlow.splitSize("250ml").size, "A bare size has no name to split from")
+    }
+
+    private func scan(outcome: String, lineId: String) -> Scan {
+        Scan(
+            id: "scan-\(lineId)",
+            outcome: outcome,
+            barcode: "8050038450997",
+            codice: "MS001",
+            productName: "Sapone",
+            message: "",
+            unitNumber: 1,
+            required: 1,
+            recheck: false,
+            discrepancyId: nil,
+            lineId: lineId
+        )
+    }
+
+    private func line(id: String = "x", method: String, canManualConfirm: Bool) -> Line {
+        Line(
+            lineId: id,
+            kind: "physical",
+            kindReason: nil,
+            required: 1,
+            verified: 0,
+            uncertain: 0,
+            remaining: 1,
+            state: "todo",
+            identity: Identity(
+                status: method == "barcode" ? "resolved" : "unresolved",
+                codice: method == "barcode" ? "MS001" : nil,
+                ficName: method == "barcode" ? "Sapone" : nil,
+                reason: nil,
+                sourceTitle: "Materiale promozionale"
+            ),
+            verification: Verification(method: method, reason: nil),
+            units: [],
+            canManualConfirm: canManualConfirm
+        )
     }
 
     private func order(id: String, reference: String, eligible: Bool, packStatus: String?, isOwner: Bool = false) -> WorkloadOrder {

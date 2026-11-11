@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ADMIN_CSP, ADMIN_HTML, ADMIN_JS } from './admin-page.ts';
@@ -31,8 +32,16 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
 
   // Read-only web dashboard. The page itself holds no data; it signs in and reads /v1/admin/completed.
   const adminHeaders = { 'content-security-policy': ADMIN_CSP, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' };
+  const adminAsset = (name: string, type: string) => {
+    const bytes = readFileSync(new URL(`./admin-assets/${name}`, import.meta.url));
+    return (c: { body: (data: Uint8Array, status?: 200, headers?: Record<string, string>) => Response }) =>
+      c.body(bytes, 200, { ...adminHeaders, 'content-type': type, 'cache-control': 'public, max-age=86400' });
+  };
   app.get('/admin', (c) => c.html(ADMIN_HTML, 200, adminHeaders));
   app.get('/admin/app.js', (c) => c.body(ADMIN_JS, 200, { ...adminHeaders, 'content-type': 'text/javascript; charset=utf-8' }));
+  app.get('/admin/logo.png', adminAsset('logo.png', 'image/png'));
+  app.get('/admin/favicon.png', adminAsset('favicon.png', 'image/png'));
+  app.get('/admin/favicon.ico', adminAsset('favicon.ico', 'image/x-icon'));
 
   const body = async (c: { req: { json: () => Promise<unknown> } }) => {
     const value = await c.req.json().catch(() => null);
@@ -82,7 +91,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
   });
   app.post('/v1/packs/:id/confirm', async (c) => {
     const b = await body(c);
-    return c.json(packing.confirmUnit(ctx, c.get('user'), c.req.param('id'), str(b.scanId), str(b.actionId), num(b.version)));
+    return c.json(packing.confirmUnit(ctx, c.get('user'), c.req.param('id'), str(b.scanId), str(b.actionId), num(b.version), typeof b.lineId === 'string' && b.lineId ? b.lineId : null));
   });
   app.post('/v1/packs/:id/units/:unitId/remove', async (c) => {
     const b = await body(c);

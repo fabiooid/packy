@@ -3,7 +3,7 @@
 
 export const ADMIN_CSP = [
   "default-src 'none'", "script-src 'self'", "style-src 'unsafe-inline'", "connect-src 'self'",
-  "img-src data:", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+  "img-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
 ].join('; ');
 
 export const ADMIN_HTML = `<!doctype html>
@@ -13,8 +13,10 @@ export const ADMIN_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Packy · Ordini imballati</title>
+<link rel="icon" href="/admin/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/png" href="/admin/favicon.png" sizes="32x32">
 <style>
-:root { --ground:#F4F3EF; --card:#FFFFFF; --ink:#16181D; --muted:#5C6068; --line:#E4E2DC; --accent:#3B4BDB; --success:#0B7A47; --success-soft:#E2F2EA; --danger:#C1232B; --warn-bg:#FCEEDC; --warn:#8A4500; }
+:root { --ground:#F4F3EF; --card:#FFFFFF; --ink:#16181D; --muted:#5C6068; --line:#E4E2DC; --divider:#EEEDE8; --accent:#4251E4; --success:#0B7A47; --success-soft:#E3F3EA; --danger:#C1232B; --warn-bg:#FDEFD9; --warn:#8A4500; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--ground); color:var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif; }
 main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -24,11 +26,15 @@ h1 { font-size: 28px; letter-spacing: -0.01em; margin: 0; }
 [hidden] { display: none !important; }
 #login { max-width: 380px; margin: 12vh auto 0; padding: 28px 24px; display: flex; flex-direction: column; gap: 14px; }
 label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 14px; }
-input { height: 48px; border-radius: 12px; border: 1.5px solid #D6D3CC; padding: 0 14px; font: inherit; font-weight: 400; }
+input { height: 48px; border-radius: 12px; border: 1.5px solid var(--line); padding: 0 14px; font: inherit; font-weight: 400; }
 input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { height: 48px; border: none; border-radius: 14px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 button.link { height: auto; background: none; color: var(--muted); padding: 8px 4px; }
 .error { color: var(--danger); font-size: 14px; min-height: 1em; }
+.mark { display: block; height: auto; }
+#login .mark { width: 72px; margin-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand .mark { width: 36px; flex: none; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .banner { background: var(--warn-bg); color: var(--warn); border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; font-weight: 600; font-size: 14px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
@@ -36,7 +42,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .stat b { display: block; font-size: 30px; letter-spacing: -0.01em; }
 .stat span { color: var(--muted); font-size: 13px; }
 .day { margin: 18px 4px 8px; font-weight: 600; color: var(--muted); font-size: 14px; }
-.row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-bottom: 1px solid #EEEDE8; }
+.row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--divider); }
 .check { width: 36px; height: 36px; border-radius: 18px; background: var(--success); display: flex; align-items: center; justify-content: center; }
 .check svg { width: 20px; height: 20px; }
 .status { display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
@@ -50,6 +56,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .stat.done b { color: var(--success); }
 .by b { color: var(--ink); font-weight: 600; }
 .empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+.pager button:disabled { color: var(--muted); cursor: default; }
 @media (max-width: 560px) {
   .stats { grid-template-columns: 1fr 1fr; }
   .stat:last-child { grid-column: span 2; }
@@ -62,6 +70,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 <main>
   <form id="login" class="card" hidden>
     <div>
+      <img class="mark" src="/admin/logo.png" alt="Packy" width="72" height="65">
       <h1>Packy</h1>
       <p class="muted" style="margin:4px 0 0">Ordini imballati. Accedi con lo stesso account dell'app.</p>
     </div>
@@ -73,9 +82,12 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 
   <section id="dash" hidden>
     <header>
-      <div>
-        <h1>Ordini imballati</h1>
-        <div class="muted" id="updated"></div>
+      <div class="brand">
+        <img class="mark" src="/admin/logo.png" alt="Packy" width="36" height="32">
+        <div>
+          <h1>Ordini imballati</h1>
+          <div class="muted" id="updated"></div>
+        </div>
       </div>
       <button id="logout" class="link" type="button">Esci</button>
     </header>
@@ -86,6 +98,11 @@ header { display: flex; align-items: center; justify-content: space-between; gap
       <div class="card stat"><b id="s-month">0</b><span>Ultimi 30 giorni</span></div>
     </div>
     <div id="list"></div>
+    <div id="pager" class="pager" hidden>
+      <button id="prev" class="link" type="button">Precedente</button>
+      <span id="page-label" class="muted"></span>
+      <button id="next" class="link" type="button">Successivo</button>
+    </div>
     <div id="dash-error" class="error" role="alert"></div>
   </section>
 </main>
@@ -128,19 +145,38 @@ export const ADMIN_JS = `(() => {
     return body;
   }
 
+  const PAGE = 15;
+  let page = 0;
+  let packed = [];
+
   function render(data) {
     $('fixture').hidden = !data.fixture;
     $('updated').textContent = 'Aggiornato alle ' + timeFmt.format(Date.now()) + ' · ' + data.total + ' in totale';
     const today = startOfDay(Date.now());
     const week = today - 6 * 86400000;
-    $('s-today').textContent = data.orders.filter((o) => o.completedAt >= today).length;
-    $('s-week').textContent = data.orders.filter((o) => o.completedAt >= week).length;
-    $('s-month').textContent = data.orders.length;
+    packed = data.orders;
+    $('s-today').textContent = packed.filter((o) => o.completedAt >= today).length;
+    $('s-week').textContent = packed.filter((o) => o.completedAt >= week).length;
+    $('s-month').textContent = packed.length;
+    page = 0;
+    drawList();
+  }
+
+  function drawList() {
     const list = $('list');
+    const pager = $('pager');
     list.replaceChildren();
-    if (!data.orders.length) { const c = el('div', 'card empty', 'Nessun ordine imballato negli ultimi 30 giorni.'); list.append(c); return; }
+    if (!packed.length) {
+      list.append(el('div', 'card empty', 'Nessun ordine imballato negli ultimi 30 giorni.'));
+      pager.hidden = true;
+      return;
+    }
+    const pages = Math.max(1, Math.ceil(packed.length / PAGE));
+    if (page > pages - 1) page = pages - 1;
+    if (page < 0) page = 0;
+    const today = startOfDay(Date.now());
     let card = null, current = null;
-    for (const o of data.orders) {
+    for (const o of packed.slice(page * PAGE, (page + 1) * PAGE)) {
       const day = startOfDay(o.completedAt);
       if (day !== current) {
         current = day;
@@ -163,6 +199,11 @@ export const ADMIN_JS = `(() => {
       row.append(right);
       card.append(row);
     }
+    if (pages <= 1) { pager.hidden = true; return; }
+    pager.hidden = false;
+    $('prev').disabled = page === 0;
+    $('next').disabled = page >= pages - 1;
+    $('page-label').textContent = (page + 1) + ' di ' + pages;
   }
 
   async function load() {
@@ -183,6 +224,8 @@ export const ADMIN_JS = `(() => {
     try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch {}
     store.set(null); show('login');
   });
+  $('prev').addEventListener('click', () => { if (page > 0) { page -= 1; drawList(); } });
+  $('next').addEventListener('click', () => { page += 1; drawList(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && store.get()) load(); });
 
   if (store.get()) load(); else show('login');
