@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "operator": "node scripts/operator.ts",
     "barcodes:import": "node scripts/import-barcodes.ts",
+    "links:import": "node scripts/import-links.ts",
     "purge": "node scripts/purge.ts"
   },
   "dependencies": {

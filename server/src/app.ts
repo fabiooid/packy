@@ -25,7 +25,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
       return c.json({ error: { code: error.code, message: error.message }, ...error.extra }, error.status as ContentfulStatusCode);
     }
     console.error('unhandled_error', error instanceof Error ? error.name : 'unknown');
-    return c.json({ error: { code: 'server_error', message: 'Qualcosa è andato storto. Non è stato registrato nulla.' } }, 500);
+    return c.json({ error: { code: 'server_error', message: 'Errore del server. Non registrato.' } }, 500);
   });
 
   app.get('/healthz', (c) => c.json({ ok: true }));
@@ -101,6 +101,10 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
   app.post('/v1/packs/:id/units/:unitId/remove', async (c) => {
     const b = await body(c);
     return c.json(packing.removeUnit(ctx, c.get('user'), c.req.param('id'), c.req.param('unitId'), str(b.reason), str(b.actionId), num(b.version)));
+  });
+  app.post('/v1/packs/:id/lines/:lineId/short', async (c) => {
+    const b = await body(c);
+    return c.json(packing.markShort(ctx, c.get('user'), c.req.param('id'), c.req.param('lineId'), typeof b.quantity === 'number' ? b.quantity : -1, str(b.actionId), num(b.version)));
   });
   app.post('/v1/packs/:id/discrepancies/:discrepancyId/resolve', async (c) => {
     const b = await body(c);

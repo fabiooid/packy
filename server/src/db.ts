@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS barcode_map (
   barcode TEXT NOT NULL, codice TEXT NOT NULL, provenance TEXT NOT NULL, source_ref TEXT, observed_at INTEGER NOT NULL,
   PRIMARY KEY (barcode, codice, provenance)
 );
+-- How each order source names our products. key is an exact string, like barcodes.
+CREATE TABLE IF NOT EXISTS product_links (
+  source TEXT NOT NULL, key_type TEXT NOT NULL, key TEXT NOT NULL, codice TEXT NOT NULL,
+  PRIMARY KEY (source, key_type, key)
+);
 CREATE TABLE IF NOT EXISTS source_status (
   source TEXT PRIMARY KEY, status TEXT NOT NULL, error_code TEXT, last_attempt_at INTEGER, last_success_at INTEGER
 );
@@ -48,6 +53,11 @@ CREATE TABLE IF NOT EXISTS discrepancies (
   id TEXT PRIMARY KEY, pack_id TEXT NOT NULL REFERENCES packs(id), kind TEXT NOT NULL, barcode TEXT, codice TEXT,
   title TEXT NOT NULL, detail TEXT NOT NULL, read_count INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL,
   resolution TEXT, resolved_by INTEGER, resolved_at INTEGER, created_at INTEGER NOT NULL
+);
+-- Pieces the packer marked out of stock. The order can finish as "parziale"; the second shipment is handled by people.
+CREATE TABLE IF NOT EXISTS shortages (
+  pack_id TEXT NOT NULL REFERENCES packs(id), line_id TEXT NOT NULL, quantity INTEGER NOT NULL,
+  user_id INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (pack_id, line_id)
 );
 CREATE TABLE IF NOT EXISTS actions (action_id TEXT PRIMARY KEY, pack_id TEXT NOT NULL, response TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS events (

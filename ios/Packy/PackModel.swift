@@ -57,7 +57,7 @@ final class PackModel {
                 Feedback.rejected()
             }
         } catch {
-            handle(error, fallback: "Questa scansione non ha raggiunto il server. Non è stato controllato né registrato nulla. Scansiona di nuovo.")
+            handle(error, fallback: "Server non raggiungibile. Scansiona di nuovo.")
         }
         busy = false
         if let next = queuedRead {
@@ -83,7 +83,7 @@ final class PackModel {
             card = .unknownResult(scan: scan, actionId: actionId)
             Feedback.rejected()
         } catch {
-            handle(error, fallback: "Non è stato registrato nulla.")
+            handle(error, fallback: "Non registrato. Riprova.")
         }
     }
 
@@ -102,7 +102,7 @@ final class PackModel {
             }
             Feedback.recorded()
         } catch {
-            handle(error, fallback: "Non è stato registrato nulla.")
+            handle(error, fallback: "Non registrato. Riprova.")
         }
     }
 
@@ -114,7 +114,7 @@ final class PackModel {
             pack = try await post(path, extra: extra)
             card = .idle
         } catch {
-            handle(error, fallback: "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova.")
+            handle(error, fallback: "Server non raggiungibile. Riprova.")
         }
     }
 
@@ -127,7 +127,7 @@ final class PackModel {
             didRelease = true
             return true
         } catch {
-            handle(error, fallback: "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova.")
+            handle(error, fallback: "Server non raggiungibile. Riprova.")
             return false
         }
     }
@@ -136,7 +136,7 @@ final class PackModel {
     func completeAfterRefresh() async {
         guard await refresh() else { return }
         guard pack.canComplete else {
-            card = .notRecorded("Non registrato. L'ultimo controllo ha trovato qualcosa da risolvere.")
+            card = .notRecorded("Non confermato: c'è ancora qualcosa da risolvere.")
             return
         }
         await perform("complete")
@@ -149,7 +149,7 @@ final class PackModel {
             pack = try await api.send("GET", "v1/packs/\(pack.id)")
             return true
         } catch {
-            handle(error, fallback: "Aggiornamento non riuscito. I dati mostrati sono l'ultima copia salvata.")
+            handle(error, fallback: "Aggiornamento non riuscito. Vedi gli ultimi dati salvati.")
             return false
         }
     }

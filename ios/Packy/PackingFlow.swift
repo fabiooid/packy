@@ -3,7 +3,7 @@ import Foundation
 /// v1 packing userflow rules and the copy that those rules need.
 /// Layout and chrome stay in the existing screens.
 enum PackingFlow {
-    static let signInPurpose = "Tutto il giorno a inscatolare"
+    static let signInPurpose = "Imballa senza errori"
     static let operatorField = "Nome utente"
     static let operatorHint = "es. ana"
     static let sampleMode = "Ordini di prova per test locali. Non sono dati reali dei clienti."
@@ -13,8 +13,8 @@ enum PackingFlow {
     static let listPurpose = "Inizia un ordine, finiscilo, poi passa al successivo."
     static let startAction = "Imballa"
     static let leaveAction = "Esci senza imballare"
-    static let emptyOrders = "Nessun ordine da imballare dalle fonti che hanno risposto."
-    static let sourceFailed = "Impossibile raggiungere una fonte: potrebbero esserci ordini che non vedi."
+    static let emptyOrders = "Nessun ordine da imballare."
+    static let sourceFailed = "Una fonte non risponde. Potrebbero mancare ordini."
     static let productListHint = "Scansiona ogni prodotto. L'elenco lo tiene in conto."
     static let cameraWaiting = "Inquadra un codice a barre."
     static let cameraSimulator = "Il simulatore non ha la fotocamera. Scegli un codice di prova, poi confermalo come faresti sul telefono."
@@ -118,10 +118,39 @@ enum PackingFlow {
         lines.filter { !$0.shipping }.reduce((0, 0)) { ($0.0 + $1.verified, $0.1 + $1.required) }
     }
 
-    /// "Hai letto X (code)." for a wrong read. It never suggests the right product: a guess invites a second wrong pick.
-    static func wrongReadDetail(scan: Scan) -> String {
-        let read = [scan.productName, scan.codice.map { "(\($0))" }].compactMap { $0 }.joined(separator: " ")
-        return "Hai letto \(read.isEmpty ? scan.barcode : read)."
+
+    /// Pieces marked out of stock across the order.
+    static func shortTotal(_ lines: [Line]) -> Int {
+        lines.reduce(0) { $0 + $1.shortCount }
+    }
+
+    /// What a line with out-of-stock pieces says. A product with nothing in the box reads as fully sold out.
+    static func shortStatus(_ line: Line) -> String {
+        line.verified + line.uncertain == 0 && line.shortCount >= line.required
+            ? "Esaurito"
+            : shortLabel(line.shortCount)
+    }
+
+    /// Short form for one-line rows: "Esaurito" or "9 esauriti".
+    static func shortBadge(_ line: Line) -> String {
+        line.verified + line.uncertain == 0 && line.shortCount >= line.required ? "Esaurito" : shortLabel(line.shortCount)
+    }
+
+    /// The menu action says what will happen: the missing ones, or the whole product when none is in the box.
+    static func markShortAction(_ line: Line) -> String {
+        line.verified + line.uncertain == 0 ? "Segna esaurito" : (line.remaining == 1 ? "Segna 1 esaurito" : "Segna \(line.remaining) esauriti")
+    }
+
+    static func markShortQuestion(_ line: Line) -> String {
+        let name = line.identity.ficName ?? line.identity.sourceTitle
+        let counted = line.verified + line.uncertain
+        return counted == 0
+            ? "\(name) è esaurito?"
+            : "\(name): mancano \(line.remaining)?"
+    }
+
+    static func shortLabel(_ count: Int) -> String {
+        count == 1 ? "1 esaurito" : "\(count) esauriti"
     }
 
     static func canManualConfirm(_ line: Line) -> Bool {

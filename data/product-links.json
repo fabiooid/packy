@@ -1,0 +1,4 @@
+{
+  "note": "How each order source names our products. Loaded at server start. Edit with: npm run links:import -- links.csv. Values are exact strings.",
+  "links": []
+}

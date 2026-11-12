@@ -80,7 +80,7 @@ struct LoginView: View {
                     .padding(.top, 6)
                 }
 
-                Text("Hai dimenticato l'accesso? Chiedi a chi gestisce Packy.")
+                Text("Password dimenticata? Chiedi al responsabile.")
                     .font(.footnote)
                     .foregroundStyle(Theme.cream.opacity(0.8))
                     .frame(maxWidth: .infinity)

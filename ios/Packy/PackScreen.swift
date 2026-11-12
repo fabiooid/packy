@@ -6,7 +6,7 @@ struct PackScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @State private var confirmingRestart = false
-    @State private var removing: Line?
+    @State private var markingShort: Line?
 
     private var pack: Pack { model.pack }
     private var ownsActive: Bool { pack.status == "active" && pack.isOwner }
@@ -26,30 +26,33 @@ struct PackScreen: View {
         }
         .animation(.easeInOut(duration: 0.25), value: pack.status)
         .toolbar(.hidden, for: .navigationBar)
-        .confirmationDialog("Cancellare i conteggi di \(pack.reference)?", isPresented: $confirmingRestart, titleVisibility: .visible) {
-            Button("Cancella e riparti da 0", role: .destructive) {
+        .confirmationDialog("Azzerare i conteggi di \(pack.reference)?", isPresented: $confirmingRestart, titleVisibility: .visible) {
+            Button("Azzera e ricomincia", role: .destructive) {
                 model.selectedLineId = nil
                 Task { await model.perform("restart") }
             }
         } message: {
-            Text("Tutti i conteggi tornano a 0. Togli tutto dalla scatola, poi scansiona di nuovo.")
+            Text("Svuota la scatola e scansiona di nuovo.")
         }
-        .confirmationDialog("Perché togli questo pezzo?", isPresented: removingShown, titleVisibility: .visible, presenting: removing) { line in
-            ForEach([("damaged", "Danneggiato"), ("miscounted", "Contato per errore"), ("other", "Altro")], id: \.0) { reason in
-                Button(reason.1) {
-                    if let unit = line.units.last {
-                        Task { await model.perform("units/\(unit.id)/remove", extra: ["reason": reason.0]) }
-                    }
-                }
+        .confirmationDialog(
+            markingShort.map { PackingFlow.markShortQuestion($0) } ?? "",
+            isPresented: Binding(get: { markingShort != nil }, set: { if !$0 { markingShort = nil } }),
+            titleVisibility: .visible,
+            presenting: markingShort
+        ) { line in
+            Button(PackingFlow.markShortAction(line)) {
+                if model.selectedLineId == line.lineId { model.selectedLineId = nil }
+                Task { await model.perform("lines/\(line.lineId)/short", extra: ["quantity": line.remaining]) }
             }
         } message: { _ in
-            Text("Il conteggio viene tolto. Toglilo dalla scatola.")
+            Text("L'ordine parte incompleto. I pezzi mancanti vanno spediti dopo.")
         }
     }
 
-    private var removingShown: Binding<Bool> {
-        Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
+    private func clearShort(_ line: Line) {
+        Task { await model.perform("lines/\(line.lineId)/short", extra: ["quantity": 0]) }
     }
+
 
     // MARK: Packing
 
@@ -65,9 +68,14 @@ struct PackScreen: View {
                     changes
                     openProblems
                     VStack(spacing: 10) {
-                        if pack.canScan { SectionLabel("Scegli il prodotto") }
+                        if pack.canScan { SectionLabel("Prodotti") }
                         ForEach(pack.lines) { line in
-                            LineCard(line: line, highlighted: line.lineId == selectedLine?.lineId, canRemove: ownsActive) { removing = line }
+                            LineCard(
+                                line: line,
+                                highlighted: line.lineId == selectedLine?.lineId,
+                                onMarkShort: ownsActive && (line.canMarkShort ?? false) ? { markingShort = line } : nil,
+                                onClearShort: ownsActive && line.shortCount > 0 ? { clearShort(line) } : nil
+                            )
                                 .opacity(canSelect(line) || line.lineId == selectedLine?.lineId ? 1 : 0.6)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -120,7 +128,7 @@ struct PackScreen: View {
             Spacer()
             if ownsActive && pack.hasRecordedCount {
                 Button { confirmingRestart = true } label: {
-                    Label("Cancella", systemImage: "trash")
+                    Label("Azzera", systemImage: "arrow.counterclockwise")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.danger)
                         .frame(minHeight: 44)
@@ -144,7 +152,7 @@ struct PackScreen: View {
                 countCard(line, enabled: PackingFlow.canConfirmFromHeader(line: line, pendingScan: nil)) {
                     VStack(spacing: 10) {
                         Image(systemName: line.shipping ? "shippingbox" : "eye").font(.system(size: 30, weight: .medium))
-                        Text(line.shipping ? "Metti l'etichetta giusta" : "Senza codice: controlla a vista").font(.headline)
+                        Text(line.shipping ? "Metti l'etichetta giusta" : line.custom ? "Custom: controlla a vista" : "Controlla a vista").font(.headline)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -155,7 +163,7 @@ struct PackScreen: View {
             } else if pack.canScan {
                 VStack(spacing: 10) {
                     Image(systemName: "hand.tap").font(.system(size: 30, weight: .medium))
-                    Text("Scegli un prodotto qui sotto").font(.headline)
+                    Text("Scegli un prodotto").font(.headline)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 200)
@@ -211,9 +219,9 @@ struct PackScreen: View {
 
     private func wrongRead(_ scan: Scan) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(scan.outcome == "wrong_product" ? "Prodotto sbagliato. Non contato." : "Non contato.", systemImage: "exclamationmark.triangle.fill")
+            Label(scan.outcome == "wrong_product" ? "Prodotto sbagliato" : "Non contato", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline)
-            Text(scan.outcome == "wrong_product" ? PackingFlow.wrongReadDetail(scan: scan) : scan.message)
+            Text(scan.outcome == "wrong_product" ? "Non contato" : scan.message)
                 .font(.subheadline.weight(.medium))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -328,7 +336,7 @@ private struct StatusCard: View {
         case .checking(let code):
             HStack(spacing: 10) {
                 ProgressView()
-                Text("Letto \(code). Controllo...").font(.subheadline.monospacedDigit()).foregroundStyle(Theme.body)
+                Text("Controllo \(code)…").font(.subheadline.monospacedDigit()).foregroundStyle(Theme.body)
                 Spacer()
             }
             .padding(14)
@@ -349,10 +357,10 @@ private struct StatusCard: View {
                 .background(Theme.dangerSoft, in: RoundedRectangle(cornerRadius: 20))
         case .unknownResult(let scan, let actionId):
             VStack(alignment: .leading, spacing: 10) {
-                Label("Nessuna risposta dal server. Questo pezzo potrebbe non essere contato.", systemImage: "wifi.exclamationmark")
+                Label("Nessuna risposta dal server. Riprova: il pezzo non viene contato due volte.", systemImage: "wifi.exclamationmark")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.danger)
-                Button("Riprova (non può contare due volte)") { Task { await model.confirm(scan, actionId: actionId) } }
+                Button("Riprova") { Task { await model.confirm(scan, actionId: actionId) } }
                     .buttonStyle(PrimaryButtonStyle(height: 50))
             }
             .padding(16)
@@ -366,25 +374,43 @@ private struct StatusCard: View {
 struct LineCard: View {
     let line: Line
     var highlighted = false
-    var canRemove = false
-    var onRemove: () -> Void = {}
+    /// Out of stock: offered by long-press on any card, and by the "⋯" button on the selected one.
+    var onMarkShort: (() -> Void)?
+    var onClearShort: (() -> Void)?
 
     var body: some View {
         let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(parts.name).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .top, spacing: 8) {
+                    Text(parts.name).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if highlighted && hasActions {
+                        Menu { actions } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.body.weight(.bold))
+                                .foregroundStyle(Theme.secondary)
+                                .frame(width: 36, height: 28)
+                                .background(Theme.divider, in: Capsule())
+                        }
+                        .accessibilityLabel("Altre azioni")
+                    }
+                }
                 HStack(spacing: 10) {
                     if let size = parts.size { SizeBadge(size: size, strong: highlighted || line.state != "done") }
                     if let codice = line.identity.codice {
                         Text(codice).font(.system(size: 13, weight: .medium, design: .monospaced)).foregroundStyle(Theme.secondary)
                     }
                     if line.shipping {
-                        Chip(text: "Spedizione · non è un pezzo", foreground: Theme.secondary, background: Theme.divider)
+                        Chip(text: "Spedizione", foreground: Theme.secondary, background: Theme.divider)
+                    } else if line.custom {
+                        Chip(text: "Custom · conferma a mano", foreground: Theme.warning, background: Theme.warningSoft)
                     } else if line.verification?.method == "manual" {
-                        Chip(text: "Senza codice · conferma a mano", foreground: Theme.warning, background: Theme.warningSoft)
+                        Chip(text: "Senza codice", foreground: Theme.warning, background: Theme.warningSoft)
                     }
+                }
+                if line.shortCount > 0 {
+                    Chip(text: PackingFlow.shortStatus(line) + " · da spedire dopo", foreground: Theme.warning, background: Theme.warningSoft)
                 }
             }
             ForEach(reasons, id: \.self) { reason in
@@ -399,11 +425,12 @@ struct LineCard: View {
                 ProgressBar(done: line.verified, total: line.required, height: 6)
                 HStack(spacing: 6) {
                     if line.state == "done" {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
+                        Image(systemName: line.shortCount > 0 ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(line.shortCount > 0 ? Theme.warning : Theme.success)
                     }
                     Text(PackingFlow.countLabel(verified: line.verified, required: line.required))
                         .font(Theme.display(20))
-                        .foregroundStyle(line.state == "done" ? Theme.success : Theme.ink)
+                        .foregroundStyle(line.state == "done" ? (line.shortCount > 0 ? Theme.warning : Theme.success) : Theme.ink)
                 }
                 .fixedSize()
             }
@@ -411,14 +438,21 @@ struct LineCard: View {
                 Label("\(line.uncertain) da riscansionare", systemImage: "arrow.triangle.2.circlepath")
                     .font(.footnote).foregroundStyle(Theme.warning)
             }
-            if canRemove && !line.units.isEmpty {
-                Button("Togline uno", action: onRemove)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
-            }
         }
         .padding(16)
         .card(border: borderColor, width: highlighted ? 2 : 1)
+        .contextMenu { if hasActions { actions } }
+    }
+
+    private var hasActions: Bool { onMarkShort != nil || onClearShort != nil }
+
+    @ViewBuilder private var actions: some View {
+        if let onMarkShort {
+            Button(PackingFlow.markShortAction(line), systemImage: "shippingbox.and.arrow.backward", action: onMarkShort)
+        }
+        if let onClearShort {
+            Button("Annulla esauriti", systemImage: "arrow.uturn.backward", action: onClearShort)
+        }
     }
 
     private var reasons: [String] {
@@ -428,7 +462,7 @@ struct LineCard: View {
     private var borderColor: Color {
         if highlighted { return Theme.accent }
         switch line.state {
-        case "done": return Theme.success
+        case "done": return line.shortCount > 0 ? Theme.warning : Theme.success
         case "blocked", "recheck": return Theme.warning
         default: return Theme.border
         }
@@ -453,9 +487,9 @@ struct ResolutionButtons: View {
 
     static func label(for resolution: String) -> String {
         switch resolution {
-        case "set_aside": "L'ho tolto dalla scatola"
-        case "never_in_box": "Non è mai entrato"
-        case "repeat_read": "Stesso pezzo letto due volte"
+        case "set_aside": "Tolto dalla scatola"
+        case "never_in_box": "Mai messo nella scatola"
+        case "repeat_read": "Letto due volte"
         default: resolution
         }
     }
@@ -481,6 +515,8 @@ private struct ReadyView: View {
 
     private var pack: Pack { model.pack }
     private var total: Int { PackingFlow.pieces(pack.lines).total }
+    private var counted: Int { PackingFlow.pieces(pack.lines).counted }
+    private var short: Int { PackingFlow.shortTotal(pack.lines) }
 
     var body: some View {
         ScrollView {
@@ -492,32 +528,54 @@ private struct ReadyView: View {
                 if pack.fixture { FixtureBanner() }
                 ZStack {
                     Circle().stroke(Theme.track, lineWidth: 10)
-                    Circle().stroke(Theme.success, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    Circle().trim(from: 0, to: total > 0 ? CGFloat(counted) / CGFloat(total) : 1)
+                        .stroke(short > 0 ? Theme.warning : Theme.success, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
                     VStack(spacing: 0) {
-                        Text("\(total)/\(total)").font(Theme.display(38))
+                        Text("\(counted)/\(total)").font(Theme.display(38))
                         Text(PackingFlow.unitWord(total)).font(.caption).foregroundStyle(Theme.secondary)
                     }
                 }
                 .frame(width: 132, height: 132)
                 .accessibilityElement(children: .combine)
-                Text("È tutto nella scatola").font(Theme.display(28)).foregroundStyle(Theme.ink)
+                Text(short > 0 ? "Spedizione parziale" : "Tutto nella scatola").font(Theme.display(28)).foregroundStyle(Theme.ink)
+                if short > 0 {
+                    Notice(title: "\(PackingFlow.shortLabel(short)): da spedire dopo", detail: "Il pacco parte senza questi pezzi.",
+                           icon: "shippingbox.and.arrow.backward", color: Theme.warning, soft: Theme.warningSoft)
+                }
 
                 VStack(spacing: 0) {
                     ForEach(Array(pack.lines.enumerated()), id: \.element.lineId) { index, line in
+                        // Two columns only: the product and its count. The size sits on the second line,
+                        // so a long name can truncate without hiding which size it is.
+                        let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
+                        let codice = line.identity.codice ?? ""
                         HStack(spacing: 12) {
-                                Circle().fill(Theme.success).frame(width: 26, height: 26)
-                                    .overlay(Image(systemName: "checkmark").font(.caption.weight(.heavy)).foregroundStyle(.white))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(line.identity.ficName ?? line.identity.sourceTitle).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
-                                    if let codice = line.identity.codice {
-                                        Text(codice).font(.footnote).foregroundStyle(Theme.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(parts.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
+                                    .lineLimit(1).truncationMode(.tail)
+                                if parts.size != nil || !codice.isEmpty || line.shortCount > 0 {
+                                    HStack(spacing: 8) {
+                                        if let size = parts.size {
+                                            Text(size).font(.footnote.weight(.bold)).foregroundStyle(.white)
+                                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                                .background(Theme.ink, in: RoundedRectangle(cornerRadius: 6))
+                                                .fixedSize()
+                                        }
+                                        (Text(line.shortCount > 0 && !codice.isEmpty ? "\(codice) · " : codice).foregroundStyle(Theme.secondary)
+                                         + Text(line.shortCount > 0 ? PackingFlow.shortBadge(line) : "").fontWeight(.semibold).foregroundStyle(Theme.warning))
+                                            .font(.footnote)
+                                            .lineLimit(1)
                                     }
                                 }
-                                Spacer()
-                                Text(PackingFlow.countLabel(verified: line.verified, required: line.required))
-                                    .font(Theme.display(17)).foregroundStyle(Theme.ink)
                             }
-                            .padding(.horizontal, 16).padding(.vertical, 14)
+                            Spacer(minLength: 8)
+                            Text(PackingFlow.countLabel(verified: line.verified, required: line.required))
+                                .font(Theme.display(17))
+                                .foregroundStyle(line.shortCount > 0 ? Theme.warning : Theme.ink)
+                                .fixedSize()
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 12)
                         if index < pack.lines.count - 1 { Divider().overlay(Theme.divider) }
                     }
                 }
@@ -610,6 +668,10 @@ private struct PackedView: View {
                     .accessibilityLabel("Imballato")
                 Text(pack.recipient ?? pack.reference).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
                 Text("\(pack.reference) · \(units) \(PackingFlow.unitWord(units))").font(.subheadline).foregroundStyle(Theme.secondary)
+                if PackingFlow.shortTotal(pack.lines) > 0 {
+                    Chip(text: "Parziale · \(PackingFlow.shortTotal(pack.lines)) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
+                        .padding(.top, 4)
+                }
             }
             Spacer()
             VStack(spacing: 8) {
@@ -620,7 +682,7 @@ private struct PackedView: View {
                     .buttonStyle(PrimaryButtonStyle(color: Theme.ink, height: 58))
                 }
                 Button("Torna agli ordini", action: onBack).buttonStyle(SecondaryButtonStyle(filled: next == nil))
-                Text("Imballato solo in Packy. Spediscilo come al solito.").font(.caption).foregroundStyle(Theme.secondary)
+                Text("Ora spediscilo come al solito.").font(.caption).foregroundStyle(Theme.secondary)
             }
         }
         .padding(.horizontal, 20)

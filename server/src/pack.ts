@@ -59,8 +59,14 @@ export interface LineView {
   verification: Verification | null;
   units: { id: string; status: string; confirmedAt: number; confirmedBy: string }[];
   canManualConfirm: boolean;
+  /** Pieces marked out of stock. They count towards finishing the line but are not in the box. */
+  short: number;
+  /** True while this line still has pieces that could be marked out of stock. */
+  canMarkShort: boolean;
   /** Shipping row: confirmed by hand, never counted as a piece. */
   isShipping: boolean;
+  /** Not in the product list (no link, no matching SKU): shown as "Custom" and confirmed by hand. */
+  isCustom: boolean;
 }
 
 export interface Blocker { code: string; message: string; lineId?: string }
@@ -76,6 +82,8 @@ export interface PackView {
   changes: Change[]; blockers: Blocker[]; canComplete: boolean;
   completedAt: number | null; completedByName: string | null; changedAfterCompletion: boolean; limitsNote: string;
   hasRecordedCount: boolean; canLeave: boolean;
+  /** Some pieces were marked out of stock: the box ships without them. */
+  partial: boolean;
   /** Counted units exist but the order can never be completed, so the packer may empty the box and leave. */
   canEmptyAndLeave: boolean;
 }
@@ -98,13 +106,12 @@ export function findLivePack(db: DatabaseSync, source: string, orderId: string):
 }
 
 /** A line has a barcode when the catalog maps its SKU to a usable code. Otherwise the operator confirms by hand, unless a kit or barcode conflict still blocks it. */
-function classifyLine(db: DatabaseSync, line: SourceLine, policies: Policies): { identity: Identity; verification: Verification | null; blocked: boolean } {
-  const identity = resolveIdentity(db, line);
+/** A line not in the product list is a custom item: shown with its source title and confirmed by hand. Only kit and barcode-conflict policies block. */
+function classifyLine(db: DatabaseSync, line: SourceLine, policies: Policies, source = ''): { identity: Identity; verification: Verification | null; blocked: boolean } {
+  const identity = resolveIdentity(db, line, source);
   const resolved = identity.status === 'resolved' && identity.codice ? resolveVerification(db, identity.codice, policies) : null;
-  const blankSku = !line.sku || line.sku.trim() === '';
-  const catalogMiss = identity.status === 'unresolved' && !blankSku;
   const policyBlocked = resolved?.blockCode === 'kit_policy' || resolved?.blockCode === 'barcode_conflict';
-  const blocked = catalogMiss || policyBlocked;
+  const blocked = policyBlocked;
   let verification = resolved;
   if (!blocked && verification?.method !== 'barcode') {
     verification = { method: 'manual', barcodes: verification?.barcodes ?? [], blockCode: verification?.blockCode ?? null, reason: null };
@@ -151,18 +158,18 @@ function diffLines(accepted: SourceLine[], current: SourceLine[]): Change[] {
 function freshness(ctx: Ctx, order: OrderRow): PackView['freshness'] {
   const status = ctx.db.prepare('SELECT status FROM source_status WHERE source = ?').get(order.source) as { status: string } | undefined;
   if (status?.status !== 'ok') {
-    return { state: 'unavailable', pulledAt: order.pulled_at, message: 'Fonte dell\'ordine non raggiungibile. Questa è l\'ultima copia salvata.' };
+    return { state: 'unavailable', pulledAt: order.pulled_at, message: 'Fonte non raggiungibile. Vedi gli ultimi dati salvati.' };
   }
   if (ctx.now() - order.pulled_at > ORDER_MAX_AGE_MS) {
-    return { state: 'cached', pulledAt: order.pulled_at, message: 'Questa copia è troppo vecchia. Aggiorna prima di completare.' };
+    return { state: 'cached', pulledAt: order.pulled_at, message: 'Dati vecchi. Aggiorna prima di confermare.' };
   }
   return { state: 'current', pulledAt: order.pulled_at, message: null };
 }
 
 function catalogProblem(ctx: Ctx): string | null {
   const row = ctx.db.prepare(`SELECT last_success_at FROM source_status WHERE source = 'fic'`).get() as { last_success_at: number | null } | undefined;
-  if (!row?.last_success_at) return 'Il catalogo FIC non è mai stato letto, quindi i prodotti non si possono confermare.';
-  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'La copia del catalogo FIC ha più di un giorno. Aggiorna prima di completare.';
+  if (!row?.last_success_at) return 'Catalogo FIC non ancora letto. Aggiorna.';
+  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'Catalogo FIC vecchio. Aggiorna prima di confermare.';
   return null;
 }
 
@@ -173,20 +180,25 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   const accepted = JSON.parse(pack.accepted_lines) as SourceLine[];
   const changes = diffLines(accepted, current);
   const units = db.prepare(`SELECT * FROM units WHERE pack_id = ? AND status != 'removed' ORDER BY confirmed_at`).all(pack.id) as unknown as UnitRow[];
+  const shorts = new Map((db.prepare('SELECT line_id, quantity FROM shortages WHERE pack_id = ?').all(pack.id) as { line_id: string; quantity: number }[]).map((r) => [r.line_id, r.quantity]));
 
   const lines: LineView[] = accepted.map((line) => {
-    const { identity, verification, blocked } = classifyLine(db, line, ctx.policies);
+    const { identity, verification, blocked } = classifyLine(db, line, ctx.policies, pack.source);
     const own = units.filter((u) => u.line_id === line.lineId);
     const verified = own.filter((u) => u.status === 'verified').length;
     const uncertain = own.length - verified;
-    const remaining = Math.max(0, line.required - own.length);
+    const short = Math.min(shorts.get(line.lineId) ?? 0, Math.max(0, line.required - own.length));
+    const remaining = Math.max(0, line.required - own.length - short);
     const state: LineView['state'] = blocked ? 'blocked' : uncertain > 0 ? 'recheck' : remaining === 0 ? 'done' : verified > 0 ? 'partial' : 'todo';
     const canManualConfirm = !blocked && verification?.method === 'manual' && (remaining > 0 || uncertain > 0);
     return {
       lineId: line.lineId, kind: line.kind, kindReason: line.kindReason, required: line.required, verified, uncertain, remaining, state, identity, verification,
       units: own.map((u) => ({ id: u.id, status: u.status, confirmedAt: u.confirmed_at, confirmedBy: userName(db, u.confirmed_by) })),
       canManualConfirm,
+      short,
+      canMarkShort: !blocked && line.shipping !== true && remaining > 0,
       isShipping: line.shipping === true,
+      isCustom: identity.status === 'unresolved' && line.shipping !== true,
     };
   });
 
@@ -228,6 +240,7 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
     completedAt: pack.completed_at, completedByName: pack.completed_by ? userName(db, pack.completed_by) : null,
     changedAfterCompletion: pack.status === 'completed' && (changes.length > 0 || !order.eligible), limitsNote: LIMITS_NOTE,
     hasRecordedCount, canLeave: pack.status === 'active' && isOwner && !hasRecordedCount,
+    partial: lines.some((l) => l.short > 0),
     canEmptyAndLeave: pack.status === 'active' && isOwner && hasRecordedCount && cannotFinish,
   };
 }
@@ -350,7 +363,7 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
 
     if (lookup.status === 'unknown') {
       outcome = 'unknown_code';
-      message = 'Questo codice non è collegato a nessun prodotto. Non contato.';
+      message = 'Codice sconosciuto. Non contato.';
     } else if (lookup.status === 'conflict') {
       outcome = 'ambiguous_code';
       message = `${lookup.reason} Non contato.`;
@@ -362,8 +375,8 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
       const label = `${codice} ${name ?? '(non nel catalogo FIC)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
-        // Say only what was read. Suggesting the right product invites a second wrong pick.
-        message = `Prodotto sbagliato. Non contato. Hai letto ${productLabel(codice, name)}.`;
+        // Short on purpose: no product names. Suggesting the right one invites a second wrong pick.
+        message = 'Prodotto sbagliato. Non contato.';
       } else if (matching.every((l) => l.state === 'blocked')) {
         outcome = 'line_blocked';
         message = matching[0].verification?.reason ?? matching[0].kindReason ?? 'Questa riga non si può ancora verificare.';
@@ -399,7 +412,7 @@ function creditOneUnit(ctx: Ctx, pack: PackRow, user: User, view: PackView, line
     ctx.db.prepare(`UPDATE units SET status = 'verified', barcode = ?, confirmed_by = ?, confirmed_at = ? WHERE id = ?`).run(barcode, user.id, ctx.now(), recheck.id);
     return true;
   }
-  if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'Questa riga è già completa. Non è stato aggiunto nulla.', { pack: view });
+  if (line.remaining <= 0) throw new ApiError(409, 'line_complete', 'Prodotto già completo. Non aggiunto.', { pack: view });
   ctx.db.prepare(`INSERT INTO units (id, pack_id, line_id, codice, barcode, status, confirmed_by, confirmed_at) VALUES (?,?,?,?,?,'verified',?,?)`)
     .run(randomUUID(), pack.id, line.lineId, line.identity.codice ?? '', barcode, user.id, ctx.now());
   return false;
@@ -455,6 +468,33 @@ export function removeUnit(ctx: Ctx, user: User, packId: string, unitId: string,
   });
 }
 
+/**
+ * Marks the rest of a product as out of stock, or clears it (quantity 0). The counted pieces stay in the box;
+ * the order can then finish as "parziale". Undo is possible until the order is packed.
+ */
+export function markShort(ctx: Ctx, user: User, packId: string, lineId: string, quantity: number, actionId: string, version: number): PackView {
+  return idempotent(ctx, actionId, packId, () => {
+    const { pack, view } = guardWrite(ctx, packId, user, version);
+    const line = view.lines.find((l) => l.lineId === lineId);
+    if (!line) throw new ApiError(400, 'bad_line', 'Il prodotto scelto non è in questo ordine.', { pack: view });
+    if (line.isShipping) throw new ApiError(409, 'shipping_line', 'La spedizione non si può segnare come esaurita.', { pack: view });
+    const counted = line.verified + line.uncertain;
+    if (!Number.isInteger(quantity) || quantity < 0 || quantity > line.required - counted) {
+      throw new ApiError(400, 'bad_quantity', `Puoi segnare come esauriti al massimo ${line.required - counted} pezzi.`, { pack: view });
+    }
+    if (quantity === 0) {
+      ctx.db.prepare('DELETE FROM shortages WHERE pack_id = ? AND line_id = ?').run(pack.id, lineId);
+    } else {
+      ctx.db.prepare(`INSERT INTO shortages (pack_id, line_id, quantity, user_id, created_at) VALUES (?,?,?,?,?)
+        ON CONFLICT (pack_id, line_id) DO UPDATE SET quantity = excluded.quantity, user_id = excluded.user_id, created_at = excluded.created_at`)
+        .run(pack.id, lineId, quantity, user.id, ctx.now());
+    }
+    logEvent(ctx, pack.id, quantity === 0 ? 'short_cleared' : 'marked_short', user.id, { lineId, quantity });
+    bump(ctx, pack.id);
+    return viewPack(ctx, pack.id, user);
+  });
+}
+
 export function resolveDiscrepancy(ctx: Ctx, user: User, packId: string, discrepancyId: string, resolution: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack } = guardWrite(ctx, packId, user, version);
@@ -488,7 +528,7 @@ export function reconcile(ctx: Ctx, user: User, packId: string, actionId: string
         ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'order_changed' WHERE id = ?`).run(user.id, ctx.now(), unit.id);
       }
       raiseDiscrepancy(ctx, pack.id, 'order_reduced', own[0].barcode, own[0].codice, `Togli ${excess.length} x ${own[0].codice}`,
-        'L\'ordine non richiede più questi pezzi. Il conteggio è stato tolto. Toglili dalla scatola.');
+        'L\'ordine non chiede più questi pezzi. Toglili dalla scatola.');
     }
     ctx.db.prepare('UPDATE packs SET accepted_lines = ? WHERE id = ?').run(order.lines, pack.id);
     logEvent(ctx, pack.id, 'reconciled', user.id, view.changes);
@@ -503,7 +543,7 @@ function markAllUncertain(ctx: Ctx, packId: string): void {
 
 function requireCurrentVersion(ctx: Ctx, pack: PackRow, user: User, version: number): void {
   if (pack.version !== version) {
-    throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.', { pack: buildView(ctx, pack, user) });
+    throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato. Controlla l\'avanzamento.', { pack: buildView(ctx, pack, user) });
   }
 }
 
@@ -527,7 +567,7 @@ export function takeOver(ctx: Ctx, user: User, packId: string, actionId: string,
 export function complete(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack, view } = guardWrite(ctx, packId, user, version);
-    if (view.blockers.length > 0) throw new ApiError(409, 'completion_blocked', 'Questo ordine non si può ancora completare.', { pack: view });
+    if (view.blockers.length > 0) throw new ApiError(409, 'completion_blocked', 'Ordine non ancora completo.', { pack: view });
     ctx.db.prepare(`UPDATE packs SET status = 'completed', completed_at = ?, completed_by = ? WHERE id = ?`).run(ctx.now(), user.id, pack.id);
     logEvent(ctx, pack.id, 'completed', user.id);
     bump(ctx, pack.id);
@@ -556,6 +596,7 @@ export function restart(ctx: Ctx, user: User, packId: string, actionId: string, 
     const { pack } = guardWrite(ctx, packId, user, version);
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'restarted' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'restarted', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
+    ctx.db.prepare('DELETE FROM shortages WHERE pack_id = ?').run(pack.id);
     logEvent(ctx, pack.id, 'restarted', user.id);
     bump(ctx, pack.id);
     return viewPack(ctx, pack.id, user);
@@ -568,10 +609,11 @@ export function release(ctx: Ctx, user: User, packId: string, actionId: string, 
     const pack = getPack(ctx.db, packId);
     if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
     if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi sta imballando può svuotare la scatola.');
-    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'This order changed. Check the latest progress.');
+    if (pack.version !== version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato. Controlla l\'avanzamento.');
     // "Cancella" on the order list: the owner confirms the box is empty, counts go and the order is free again.
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'box_emptied', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
+    ctx.db.prepare('DELETE FROM shortages WHERE pack_id = ?').run(pack.id);
     ctx.db.prepare(`UPDATE packs SET status = 'released' WHERE id = ?`).run(pack.id);
     logEvent(ctx, pack.id, 'released', user.id);
     bump(ctx, pack.id);
@@ -597,7 +639,7 @@ export function workload(ctx: Ctx, user: User): WorkloadView {
     const pack = findLivePack(db, o.source, o.order_id);
     const view = pack ? buildView(ctx, pack, user) : null;
     const lines = JSON.parse(o.lines) as SourceLine[];
-    const blockedLines = lines.filter((l) => classifyLine(db, l, ctx.policies).blocked).length;
+    const blockedLines = lines.filter((l) => classifyLine(db, l, ctx.policies, o.source).blocked).length;
     return {
       source: o.source, orderId: o.order_id, reference: o.reference, recipient: o.recipient, createdAt: o.created_at,
       eligible: Boolean(o.eligible), ineligibleReason: o.ineligible_reason, units: lines.reduce((s, l) => s + (l.shipping ? 0 : l.required), 0),
@@ -617,6 +659,8 @@ export interface CompletedOrder {
   completedAt: number; source: string; reference: string; recipient: string | null; completedByName: string; units: number;
   /** Pieces confirmed by hand because the product has no barcode. */
   manualUnits: number;
+  /** Pieces marked out of stock: shipped later, by people, outside Packy. 0 means a complete order. */
+  shortUnits: number;
 }
 
 /** Read-only activity feed for the web dashboard: orders packed in the last `days` days, newest first. */
@@ -629,14 +673,16 @@ export function completedOrders(ctx: Ctx, days = 30, limit = 500): { fixture: bo
     JOIN users u ON u.id = p.completed_by
     LEFT JOIN orders o ON o.source = p.source AND o.order_id = p.order_id
     WHERE p.status = 'completed' AND p.completed_at >= ?
-    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as (Omit<CompletedOrder, 'units' | 'manualUnits'> & { packId: string; acceptedLines: string })[];
+    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as (Omit<CompletedOrder, 'units' | 'manualUnits' | 'shortUnits'> & { packId: string; acceptedLines: string })[];
   const unitsOf = ctx.db.prepare(`SELECT line_id AS lineId, barcode FROM units WHERE pack_id = ? AND status != 'removed'`);
+  const shortOf = ctx.db.prepare('SELECT COALESCE(SUM(quantity), 0) AS n FROM shortages WHERE pack_id = ?');
   const total = (ctx.db.prepare(`SELECT COUNT(*) AS n FROM packs WHERE status = 'completed'`).get() as { n: number }).n;
   const orders = rows.map(({ packId, acceptedLines, ...r }) => {
     // Pieces only: shipping rows are confirmed by hand but are not in the box.
     const shippingIds = new Set((JSON.parse(acceptedLines) as SourceLine[]).filter((l) => l.shipping).map((l) => l.lineId));
     const pieces = (unitsOf.all(packId) as { lineId: string; barcode: string }[]).filter((u) => !shippingIds.has(u.lineId));
-    return { ...r, units: pieces.length, manualUnits: pieces.filter((u) => u.barcode === '').length };
+    const shortUnits = (shortOf.get(packId) as { n: number }).n;
+    return { ...r, units: pieces.length, manualUnits: pieces.filter((u) => u.barcode === '').length, shortUnits };
   });
   return { fixture: ctx.sources.fixture, since, total, orders };
 }

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import type { BarcodeEntry, SourceLine } from './types.ts';
+import type { BarcodeEntry, ProductLink, SourceLine } from './types.ts';
 
 export type BarcodeLookup =
   | { status: 'unknown' }
@@ -8,7 +8,10 @@ export type BarcodeLookup =
   | { status: 'resolved'; codice: string };
 
 export interface Identity {
+  /** 'unresolved' means a custom item: not in the product list, confirmed by hand. */
   status: 'resolved' | 'unresolved';
+  /** How the product was found: a saved link for this source, or the SKU equal to the product code. */
+  matchedBy?: 'link' | 'sku' | null;
   codice: string | null;
   ficName: string | null;
   reason: string | null;
@@ -78,16 +81,42 @@ export function productName(db: DatabaseSync, code: string): string | null {
   return row?.name ?? null;
 }
 
-export function resolveIdentity(db: DatabaseSync, line: SourceLine): Identity {
+/** Replaces every product link with the given list. Links are set up once, before going live. */
+export function replaceLinks(db: DatabaseSync, links: ProductLink[]): void {
+  db.exec('DELETE FROM product_links');
+  const insert = db.prepare('INSERT OR REPLACE INTO product_links (source, key_type, key, codice) VALUES (?,?,?,?)');
+  for (const l of links) insert.run(l.source, l.keyType, l.key, l.codice);
+}
+
+function linkedCodice(db: DatabaseSync, source: string, keyType: string, key: string): string | null {
+  const row = db.prepare('SELECT codice FROM product_links WHERE source = ? AND key_type = ? AND key = ?').get(source, keyType, key) as { codice: string } | undefined;
+  return row?.codice ?? null;
+}
+
+/**
+ * Finds our product for an order line, in a fixed order and never by guessing from the title:
+ * 1. a saved link for one of the source's own ids, 2. a saved link for the SKU, 3. the SKU equal to a product code.
+ * Anything else is a custom item, confirmed by hand.
+ */
+export function resolveIdentity(db: DatabaseSync, line: SourceLine, source = ''): Identity {
   const sourceTitle = [line.title, line.variantTitle].filter(Boolean).join(' ');
-  if (!line.sku || line.sku.trim() === '') {
-    return { status: 'unresolved', codice: null, ficName: null, reason: 'La riga non ha SKU, quindi il prodotto FIC non è noto.', sourceTitle };
+  const custom: Identity = { status: 'unresolved', matchedBy: null, codice: null, ficName: null, reason: null, sourceTitle };
+  const candidates: { codice: string; by: 'link' | 'sku' }[] = [];
+  for (const k of line.keys ?? []) {
+    const c = linkedCodice(db, source, k.type, k.value);
+    if (c) candidates.push({ codice: c, by: 'link' });
   }
-  const name = productName(db, line.sku);
-  if (name === null) {
-    return { status: 'unresolved', codice: null, ficName: null, reason: `Lo SKU ${line.sku} non corrisponde a nessun Codice FIC nel catalogo.`, sourceTitle };
+  const sku = line.sku?.trim();
+  if (sku) {
+    const c = linkedCodice(db, source, 'sku', sku);
+    if (c) candidates.push({ codice: c, by: 'link' });
+    candidates.push({ codice: sku, by: 'sku' });
   }
-  return { status: 'resolved', codice: line.sku, ficName: name, reason: null, sourceTitle };
+  for (const c of candidates) {
+    const name = productName(db, c.codice);
+    if (name !== null) return { status: 'resolved', matchedBy: c.by, codice: c.codice, ficName: name, reason: null, sourceTitle };
+  }
+  return custom;
 }
 
 export function resolveVerification(db: DatabaseSync, codice: string, policies: Policies): Verification {

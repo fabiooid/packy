@@ -11,6 +11,18 @@ export interface SourceLine {
   kindReason: string | null;
   /** A shipping method row. It is confirmed by hand (label on the box) but is not a piece in the box. */
   shipping?: boolean;
+  /** The source's own ids for the product (Faire product or variant id, Shopify variant id...). Matched through product links. */
+  keys?: { type: ProductKeyType; value: string }[];
+}
+
+export type ProductKeyType = 'sku' | 'product_id' | 'variant_id';
+
+/** "This source calls our product <codice> by <key>". Loaded once from data/product-links.json. */
+export interface ProductLink {
+  source: string;
+  keyType: ProductKeyType;
+  key: string;
+  codice: string;
 }
 
 export interface NonPhysicalRow {

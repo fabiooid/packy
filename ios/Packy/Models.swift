@@ -57,6 +57,8 @@ struct PackedOrder: Decodable, Identifiable {
     let recipient: String?
     let completedByName: String
     let units: Int
+    /// Pieces marked out of stock when it was packed. 0 or nil means complete.
+    var shortUnits: Int?
     var id: String { "\(source)|\(reference)|\(completedAt)" }
     var date: Date { Date(timeIntervalSince1970: completedAt / 1000) }
 }
@@ -107,7 +109,14 @@ struct Line: Decodable, Identifiable {
     let canManualConfirm: Bool
     /// Shipping row: confirmed by hand (label on the box), never counted as a piece. Optional so older servers still decode.
     let isShipping: Bool?
+    /// Pieces marked out of stock. Optional (var) so older servers and test fixtures still work.
+    var short: Int?
+    var canMarkShort: Bool?
+    /// Not in the product list: shown as "Custom" with its title from the order, confirmed by hand.
+    var isCustom: Bool?
+    var custom: Bool { isCustom ?? false }
     var shipping: Bool { isShipping ?? false }
+    var shortCount: Int { short ?? 0 }
     var id: String { lineId }
 }
 
@@ -167,6 +176,8 @@ struct Pack: Decodable {
     let limitsNote: String
     let hasRecordedCount: Bool
     let canLeave: Bool
+    /// Some pieces were marked out of stock: the box ships without them.
+    var partial: Bool?
     var canScan: Bool { status == "active" && isOwner && eligible && changes.isEmpty }
 }
 
