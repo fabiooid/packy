@@ -11,7 +11,7 @@ export interface SourceLine {
   kindReason: string | null;
   /** A shipping method row. It is confirmed by hand (label on the box) but is not a piece in the box. */
   shipping?: boolean;
-  /** The source's own ids for the product (Faire product or variant id, Shopify variant id...). Matched through product links. */
+  /** The source's own ids for the product (a marketplace product or variant id...). Matched through product links. */
   keys?: { type: ProductKeyType; value: string }[];
 }
 
@@ -48,10 +48,13 @@ export interface OrderSource {
   pull(): Promise<SourceOrder[]>;
 }
 
+/** Status key of the product list, whichever connector provides it. */
+export const PRODUCTS_STATUS = 'products';
+
 export interface CatalogProduct {
   code: string;
   name: string;
-  ficId: string;
+  externalId: string | null;
 }
 
 export interface CatalogSource {
@@ -77,6 +80,8 @@ export interface Sources {
   barcodes: BarcodeFeed[];
   /** Known sources with no authorized access. Reported as not connected, never as empty. */
   notConnected: { name: string; reason: string }[];
+  /** Runs before each refresh. Connectors read their manifests here. Returns sources that could not be reached. */
+  prepare?: () => Promise<{ name: string; code: string }[]>;
   fixture: boolean;
 }
 

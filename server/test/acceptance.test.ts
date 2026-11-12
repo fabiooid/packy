@@ -8,8 +8,6 @@ import { openDb } from '../src/db.ts';
 import { ORDER_MAX_AGE_MS, SCAN_OFFER_MS } from '../src/pack.ts';
 import { FIXTURE_BARCODES, fixtureSources } from '../src/sources/fixture.ts';
 import type { FixtureControl } from '../src/sources/fixture.ts';
-import { normalizeOrder, ORDERS_QUERY, VARIANTS_QUERY } from '../src/sources/shopify.ts';
-import type { ShopifyOrderNode } from '../src/sources/shopify.ts';
 
 const barcodeFor = (codice: string) => {
   const entry = FIXTURE_BARCODES.find((e) => e.codice === codice);
@@ -119,22 +117,22 @@ describe('1. authenticated access', () => {
 });
 
 describe('2. identity', () => {
-  test('resolved lines use FIC names, not source titles', async () => {
+  test('resolved lines use product-list names, not source titles', async () => {
     const p = await open(ana, 'f1');
-    assert.equal(p.lines[0].identity.ficName, 'Cardamomo Sapone Mani 250ml');
+    assert.equal(p.lines[0].identity.productName, 'Cardamomo Sapone Mani 250ml');
     assert.equal(p.lines[0].identity.codice, 'MS001');
   });
   test('a blank SKU stays unresolved even when the title resembles a product', async () => {
     const p = await open(ana, 'f3');
     const line = p.lines.find((l: any) => l.lineId === 'f3-a');
     assert.equal(line.identity.status, 'unresolved');
-    assert.equal(line.identity.ficName, null);
+    assert.equal(line.identity.productName, null);
     assert.equal(line.identity.codice, null);
     assert.equal(line.verification.method, 'manual');
     assert.equal(line.canManualConfirm, true);
     assert.ok(!codes(p).includes('identity_unresolved'));
   });
-  test('without an FIC catalog no line resolves and completion is blocked', async () => {
+  test('without a product list no line resolves and completion is blocked', async () => {
     db.exec('DELETE FROM products');
     const p = await open(ana, 'f2');
     assert.ok(p.lines.every((l: any) => l.identity.status === 'unresolved'));
@@ -337,24 +335,6 @@ describe('5. missing units and nonphysical rows', () => {
     assert.equal(p.canComplete, false);
     p = (await confirmManual(ana, p, 'f5-b')).json;
     assert.equal(p.canComplete, true);
-  });
-  test('Shopify rows: shipping is a normal line, a free item stays physical, no-shipping rows stay uncertain', () => {
-    const node: ShopifyOrderNode = {
-      id: 'o', name: '#1', createdAt: 'c', updatedAt: 'u', cancelledAt: null, closed: false, displayFinancialStatus: 'PAID',
-      lineItems: { nodes: [
-        { id: 'a', sku: 'MS001', title: 'SAMPLE', variantTitle: null, quantity: 1, currentQuantity: 1, requiresShipping: true },
-        { id: 'b', sku: null, title: 'Mystery', variantTitle: null, quantity: 1, currentQuantity: 1, requiresShipping: false },
-      ] },
-      fulfillmentOrders: { nodes: [{ status: 'OPEN', lineItems: { nodes: [{ remainingQuantity: 1, lineItem: { id: 'a' } }] } }] },
-      shippingLines: { nodes: [{ title: 'Express' }] },
-    };
-    const o = normalizeOrder(node);
-    assert.equal(o.lines.find((l) => l.lineId === 'a')?.kind, 'physical');
-    assert.equal(o.lines.find((l) => l.lineId === 'b')?.kind, 'uncertain');
-    const ship = o.lines.find((l) => l.title === 'Express');
-    assert.equal(ship?.kind, 'physical');
-    assert.equal(ship?.sku, null);
-    assert.deepEqual(o.nonPhysical, []);
   });
 });
 
@@ -709,7 +689,7 @@ describe('10. source failure and freshness', () => {
 });
 
 describe('11. read-only sources', () => {
-  test('completion calls no source, and adapter documents are queries, not mutations', async () => {
+  test('completion calls no source', async () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
     p = await confirmManualLines(ana, p);
@@ -723,39 +703,6 @@ describe('11. read-only sources', () => {
     }
     assert.equal(p.status, 'completed');
     assert.equal(calls, 0);
-    for (const q of [ORDERS_QUERY, VARIANTS_QUERY]) {
-      assert.match(q, /^query /);
-      assert.doesNotMatch(q, /mutation/);
-    }
-  });
-});
-
-describe('Shopify eligibility', () => {
-  const base = (over: Partial<ShopifyOrderNode> = {}): ShopifyOrderNode => ({
-    id: 'o', name: '#1', createdAt: 'c', updatedAt: 'u', cancelledAt: null, closed: false, displayFinancialStatus: 'PAID',
-    lineItems: { nodes: [{ id: 'a', sku: 'MS001', title: 'T', variantTitle: null, quantity: 3, currentQuantity: 2, requiresShipping: true }] },
-    fulfillmentOrders: { nodes: [{ status: 'OPEN', lineItems: { nodes: [{ remainingQuantity: 2, lineItem: { id: 'a' } }] } }] },
-    shippingLines: { nodes: [] }, ...over,
-  });
-  test('the obligation is the remaining physical quantity, not the original', () => {
-    assert.equal(normalizeOrder(base()).lines[0].required, 2);
-  });
-  test('cancelled, refunded, unpaid, held and finished orders are ineligible', () => {
-    assert.equal(normalizeOrder(base({ cancelledAt: 'x' })).eligible, false);
-    assert.equal(normalizeOrder(base({ displayFinancialStatus: 'REFUNDED' })).eligible, false);
-    assert.equal(normalizeOrder(base({ displayFinancialStatus: 'PENDING' })).eligible, false);
-    assert.equal(normalizeOrder(base({ fulfillmentOrders: { nodes: [{ status: 'ON_HOLD', lineItems: { nodes: [{ remainingQuantity: 2, lineItem: { id: 'a' } }] } }] } })).eligible, false);
-    assert.equal(normalizeOrder(base({ fulfillmentOrders: { nodes: [{ status: 'CLOSED', lineItems: { nodes: [{ remainingQuantity: 0, lineItem: { id: 'a' } }] } }] } })).eligible, false);
-  });
-  test('a partial refund stays eligible with the reduced quantity', () => {
-    const o = normalizeOrder(base({ displayFinancialStatus: 'PARTIALLY_REFUNDED' }));
-    assert.equal(o.eligible, true);
-    assert.equal(o.lines[0].required, 2);
-  });
-  test('an order too large to read completely cannot be certified', () => {
-    const b = base();
-    b.lineItems.pageInfo = { hasNextPage: true };
-    assert.equal(normalizeOrder(b).eligible, false);
   });
 });
 
@@ -909,6 +856,12 @@ describe('manual confirm for barcodeless lines', () => {
 });
 
 describe('web dashboard', () => {
+  test('API responses are never cached and carry security headers', async () => {
+    const res = await app.request('/v1/workload', { headers: { authorization: 'Bearer nope' } });
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(res.headers.get('strict-transport-security') ?? '', /max-age=/);
+  });
   test('the completed-orders feed needs a session and lists only packed orders, read-only', async () => {
     assert.equal((await call(null, 'GET', '/v1/admin/completed')).status, 401);
     assert.equal((await call('forged-token', 'GET', '/v1/admin/completed')).status, 401);

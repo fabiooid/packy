@@ -1,0 +1,10 @@
+# Second Railway service: the platform connectors. It holds the platform keys; Packy holds none.
+FROM node:26-slim
+WORKDIR /app
+COPY spec ./spec
+COPY connectors/package.json connectors/package-lock.json ./connectors/
+RUN cd connectors && npm ci --omit=dev
+COPY connectors/src ./connectors/src
+WORKDIR /app/connectors
+ENV NODE_ENV=production
+CMD ["node", "src/index.ts"]

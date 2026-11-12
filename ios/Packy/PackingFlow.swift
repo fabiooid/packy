@@ -76,7 +76,7 @@ enum PackingFlow {
     }
 
     static func orderSourceFailed(_ sources: [SourceState]) -> Bool {
-        sources.contains { $0.name != "fic" && $0.status == "unavailable" }
+        sources.contains { $0.name != "products" && $0.status == "unavailable" }
     }
 
     static func emptyListMessage(sourceFailed: Bool) -> String {
@@ -142,7 +142,7 @@ enum PackingFlow {
     }
 
     static func markShortQuestion(_ line: Line) -> String {
-        let name = line.identity.ficName ?? line.identity.sourceTitle
+        let name = line.identity.productName ?? line.identity.sourceTitle
         let counted = line.verified + line.uncertain
         return counted == 0
             ? "\(name) è esaurito?"

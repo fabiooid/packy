@@ -245,7 +245,7 @@ struct PackScreen: View {
     }
 
     private func scanTitle(_ line: Line) -> String {
-        let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
+        let parts = PackingFlow.splitSize(line.identity.productName ?? line.identity.sourceTitle)
         return [parts.name, parts.size].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -379,7 +379,7 @@ struct LineCard: View {
     var onClearShort: (() -> Void)?
 
     var body: some View {
-        let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
+        let parts = PackingFlow.splitSize(line.identity.productName ?? line.identity.sourceTitle)
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
@@ -548,7 +548,7 @@ private struct ReadyView: View {
                     ForEach(Array(pack.lines.enumerated()), id: \.element.lineId) { index, line in
                         // Two columns only: the product and its count. The size sits on the second line,
                         // so a long name can truncate without hiding which size it is.
-                        let parts = PackingFlow.splitSize(line.identity.ficName ?? line.identity.sourceTitle)
+                        let parts = PackingFlow.splitSize(line.identity.productName ?? line.identity.sourceTitle)
                         let codice = line.identity.codice ?? ""
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {

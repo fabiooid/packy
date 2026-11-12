@@ -18,14 +18,11 @@ struct SourceState: Decodable, Identifiable {
     var id: String { name }
 
     var displayName: String {
+        // Source names come from the server's connector list. The app knows no platform.
         switch name {
-        case "fic": "Fatture in Cloud"
-        case "shopify": "Shopify"
-        case "faire": "Faire"
-        case "ankorstore": "Ankorstore"
-        case "orderchamp": "OrderChamp"
+        case "products": "Elenco prodotti"
         case "fixture": "Ordini di prova"
-        default: name
+        default: name.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalized
         }
     }
 }
@@ -77,7 +74,7 @@ struct Workload: Decodable {
 struct Identity: Decodable {
     let status: String
     let codice: String?
-    let ficName: String?
+    let productName: String?
     let reason: String?
     let sourceTitle: String
 }

@@ -1,4 +1,6 @@
-import type { BarcodeEntry, BarcodeFeed, NonPhysicalRow, OrderSource, SourceLine, SourceOrder } from '../types.ts';
+// Shopify connector: translates the Shopify Admin API into the Packy connector format. Read-only: queries, never mutations.
+import type { Barcode, Order, OrderLine } from '../../spec/connector-v1.ts';
+import type { Handlers } from './serve.ts';
 
 const API_VERSION = '2026-10';
 const ELIGIBLE_PAYMENT = new Set(['PAID', 'PARTIALLY_REFUNDED']);
@@ -50,7 +52,7 @@ export interface ShopifyOrderNode {
 }
 
 /** Pure mapping, so eligibility rules are testable without network access. */
-export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
+export function normalizeOrder(node: ShopifyOrderNode): Order {
   const remaining = new Map<string, number>();
   let held = false;
   for (const fo of node.fulfillmentOrders.nodes) {
@@ -61,7 +63,7 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
     }
   }
 
-  const lines: SourceLine[] = [];
+  const lines: OrderLine[] = [];
   for (const item of node.lineItems.nodes) {
     const base = { lineId: item.id, sku: item.sku, title: item.title, variantTitle: item.variantTitle };
     if (item.requiresShipping) {
@@ -81,7 +83,7 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
       required: 1, kind: 'physical', kindReason: null, shipping: true,
     });
   });
-  const nonPhysical: NonPhysicalRow[] = [];
+  const nonPhysical: Order['nonPhysical'] = [];
   const truncated = Boolean(
     node.lineItems.pageInfo?.hasNextPage || node.fulfillmentOrders.pageInfo?.hasNextPage ||
     node.fulfillmentOrders.nodes.some((fo) => fo.lineItems.pageInfo?.hasNextPage),
@@ -96,7 +98,7 @@ export function normalizeOrder(node: ShopifyOrderNode): SourceOrder {
   else if (lines.length === 0) ineligibleReason = 'Nessun prodotto fisico da spedire.';
 
   return {
-    source: 'shopify', orderId: node.id, reference: node.name, recipient: node.shippingAddress?.name ?? null,
+    orderId: node.id, reference: node.name, recipient: node.shippingAddress?.name ?? null,
     createdAt: node.createdAt, sourceUpdatedAt: node.updatedAt,
     eligible: ineligibleReason === null, ineligibleReason, lines, nonPhysical,
   };
@@ -128,6 +130,7 @@ class ShopifyClient {
         client_secret: this.config.clientSecret ?? '',
       }),
       signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
     });
     if (!res.ok) throw new Error(`shopify_auth_${res.status}`);
     return ((await res.json()) as { access_token: string }).access_token;
@@ -140,6 +143,7 @@ class ShopifyClient {
       headers: { 'content-type': 'application/json', 'x-shopify-access-token': this.token },
       body: JSON.stringify({ query, variables: { after } }),
       signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
     });
     if (res.status === 401 && this.config.clientId) this.token = null;
     if (!res.ok) throw new Error(`shopify_http_${res.status}`);
@@ -163,30 +167,24 @@ class ShopifyClient {
   }
 }
 
-export function shopifySources(config: ShopifyConfig): { orders: OrderSource; barcodes: BarcodeFeed } {
+export function shopifyConnector(config: ShopifyConfig): Handlers {
   const client = new ShopifyClient(config);
   return {
-    orders: {
-      name: 'shopify',
-      async pull() {
-        type Page = { orders: { nodes: ShopifyOrderNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-        const nodes = await client.collectPages<Page, ShopifyOrderNode>(ORDERS_QUERY, (data) => data.orders);
-        return nodes.map(normalizeOrder);
-      },
+    async orders() {
+      type Page = { orders: { nodes: ShopifyOrderNode[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+      const nodes = await client.collectPages<Page, ShopifyOrderNode>(ORDERS_QUERY, (data) => data.orders);
+      return nodes.map(normalizeOrder);
     },
-    barcodes: {
-      name: 'shopify_variant',
-      async pull() {
-        type Variant = { id: string; sku: string | null; barcodes: { nodes: { value: string }[] } };
-        type Page = { productVariants: { nodes: Variant[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-        const nodes = await client.collectPages<Page, Variant>(VARIANTS_QUERY, (data) => data.productVariants);
-        const entries: BarcodeEntry[] = [];
-        for (const v of nodes) {
-          if (!v.sku) continue;
-          for (const b of v.barcodes.nodes) entries.push({ barcode: b.value, codice: v.sku, provenance: 'shopify_variant', sourceRef: v.id });
-        }
-        return entries;
-      },
+    async barcodes() {
+      type Variant = { id: string; sku: string | null; barcodes: { nodes: { value: string }[] } };
+      type Page = { productVariants: { nodes: Variant[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+      const nodes = await client.collectPages<Page, Variant>(VARIANTS_QUERY, (data) => data.productVariants);
+      const barcodes: Barcode[] = [];
+      for (const v of nodes) {
+        if (!v.sku) continue;
+        for (const b of v.barcodes.nodes) barcodes.push({ barcode: b.value, code: v.sku, sourceRef: v.id });
+      }
+      return barcodes;
     },
   };
 }

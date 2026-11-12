@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS products (code TEXT PRIMARY KEY, name TEXT NOT NULL, fic_id TEXT NOT NULL, pulled_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS products (code TEXT PRIMARY KEY, name TEXT NOT NULL, external_id TEXT, pulled_at INTEGER NOT NULL);
 -- barcode and codice are TEXT on purpose: leading zeroes must survive.
 CREATE TABLE IF NOT EXISTS barcode_map (
   barcode TEXT NOT NULL, codice TEXT NOT NULL, provenance TEXT NOT NULL, source_ref TEXT, observed_at INTEGER NOT NULL,
@@ -69,7 +69,11 @@ export function openDb(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  // Older databases named the product list after one platform. The table is a cache refilled on the next pull.
+  const cols = db.prepare("SELECT name FROM pragma_table_info('products')").all() as { name: string }[];
+  if (cols.some((c) => c.name === 'fic_id')) db.exec('DROP TABLE products');
   db.exec(SCHEMA);
+  db.exec(`DELETE FROM source_status WHERE source = 'fic'`);
   return db;
 }
 
