@@ -9,3 +9,16 @@ server/data/
 ios/*.xcodeproj
 ios/build/
 DerivedData/
+# Never commit keys, certificates, signing files, local data or generated candidates.
+*.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+secrets/
+ios/icon-candidates/
+connectors/data/
+*.sqlite
+*.log
+packing-app-product-brief.md
