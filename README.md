@@ -25,7 +25,7 @@ cd server && npm install
 ```
 
 ```bash
-PACKY_DB=data/fixtures.db PACKY_OPERATOR_PASSWORD='choose-a-test-password' npm run operator -- ana "Ana Test"
+PACKY_DB=data/fixtures.db PACKY_OPERATOR_PASSWORD='<pick-a-test-password>' npm run operator -- ana "Ana Test"
 ```
 
 ```bash
@@ -61,6 +61,14 @@ The repo includes a `Dockerfile` and `railway.json`. The image has not been buil
 5. Distribute through TestFlight internal testing, which needs an Apple Developer Program membership.
 
 The database path defaults to `/data/packy.db` in the image (`PACKY_DB`). Use read-only access for order and catalog sources. Add customer data access only if you want the recipient name on screen. Without it the name may be blank, which Packy handles.
+
+## Secret checks
+
+`scripts/check-secrets.sh` refuses env files, databases, private keys and anything shaped like a token. It runs before every commit once you turn the hook on in your clone, and on every push in GitHub Actions:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 ## Operations
 
