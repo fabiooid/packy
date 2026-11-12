@@ -255,7 +255,7 @@ struct PackScreen: View {
 
     private var cameraOffReason: String {
         if !pack.isOwner { return "Aperto su un altro telefono. Puoi solo guardare." }
-        if !pack.eligible { return pack.ineligibleReason ?? "Questo ordine non si può imballare." }
+        if !pack.eligible { return pack.ineligibleReason ?? "Questo ordine non si può preparare." }
         if !pack.changes.isEmpty { return "Fotocamera in pausa. L'ordine è cambiato." }
         return "Fotocamera in pausa."
     }
@@ -664,8 +664,8 @@ private struct PackedView: View {
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
                 // The one celebratory moment in the flow. VoiceOver reads the word only.
-                Text("Imballato 🎉").font(Theme.display(34)).foregroundStyle(Theme.ink)
-                    .accessibilityLabel("Imballato")
+                Text("Preparato 🎉").font(Theme.display(34)).foregroundStyle(Theme.ink)
+                    .accessibilityLabel("Preparato")
                 Text(pack.recipient ?? pack.reference).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
                 Text("\(pack.reference) · \(units) \(PackingFlow.unitWord(units))").font(.subheadline).foregroundStyle(Theme.secondary)
                 if PackingFlow.shortTotal(pack.lines) > 0 {

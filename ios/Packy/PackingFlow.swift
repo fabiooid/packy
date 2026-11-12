@@ -3,7 +3,7 @@ import Foundation
 /// v1 packing userflow rules and the copy that those rules need.
 /// Layout and chrome stay in the existing screens.
 enum PackingFlow {
-    static let signInPurpose = "Imballa senza errori"
+    static let signInPurpose = "Prepara senza errori"
     static let operatorField = "Nome utente"
     static let operatorHint = "es. ana"
     static let sampleMode = "Ordini di prova per test locali. Non sono dati reali dei clienti."
@@ -11,9 +11,9 @@ enum PackingFlow {
     static let serverUnreachable = "Server non raggiungibile"
     static let listHeading = "Ordini"
     static let listPurpose = "Inizia un ordine, finiscilo, poi passa al successivo."
-    static let startAction = "Imballa"
-    static let leaveAction = "Esci senza imballare"
-    static let emptyOrders = "Nessun ordine da imballare."
+    static let startAction = "Prepara"
+    static let leaveAction = "Esci senza preparare"
+    static let emptyOrders = "Nessun ordine da preparare."
     static let sourceFailed = "Una fonte non risponde. Potrebbero mancare ordini."
     static let productListHint = "Scansiona ogni prodotto. L'elenco lo tiene in conto."
     static let cameraWaiting = "Inquadra un codice a barre."

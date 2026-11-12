@@ -12,7 +12,7 @@ export const ADMIN_HTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Packy · Ordini imballati</title>
+<title>Packy · Ordini preparati</title>
 <link rel="icon" href="/admin/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" href="/admin/favicon.png" sizes="32x32">
 <style>
@@ -74,7 +74,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
     <div>
       <img class="mark" src="/admin/logo.png" alt="Packy" width="72" height="65">
       <h1>Packy</h1>
-      <p class="muted" style="margin:4px 0 0">Ordini imballati. Accedi con lo stesso account dell'app.</p>
+      <p class="muted" style="margin:4px 0 0">Ordini preparati. Accedi con lo stesso account dell'app.</p>
     </div>
     <label>Nome utente <input id="username" autocomplete="username" required></label>
     <label>Password <input id="password" type="password" autocomplete="current-password" required></label>
@@ -87,7 +87,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
       <div class="brand">
         <img class="mark" src="/admin/logo.png" alt="Packy" width="36" height="32">
         <div>
-          <h1>Ordini imballati</h1>
+          <h1>Ordini preparati</h1>
           <div class="muted" id="updated"></div>
         </div>
       </div>
@@ -169,7 +169,7 @@ export const ADMIN_JS = `(() => {
     const pager = $('pager');
     list.replaceChildren();
     if (!packed.length) {
-      list.append(el('div', 'card empty', 'Nessun ordine imballato negli ultimi 30 giorni.'));
+      list.append(el('div', 'card empty', 'Nessun ordine preparato negli ultimi 30 giorni.'));
       pager.hidden = true;
       return;
     }
@@ -198,7 +198,7 @@ export const ADMIN_JS = `(() => {
       const right = el('div', 'right');
       right.append(o.shortUnits
         ? el('span', 'status partial', 'Parziale · ' + o.shortUnits + ' da spedire')
-        : el('span', 'status', 'Imballato alle ' + timeFmt.format(o.completedAt)));
+        : el('span', 'status', 'Preparato alle ' + timeFmt.format(o.completedAt)));
       const by = el('div', 'by', 'da '); by.append(el('b', null, o.completedByName)); right.append(by);
       row.append(right);
       card.append(row);

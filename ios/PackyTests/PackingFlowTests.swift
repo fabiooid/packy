@@ -39,7 +39,7 @@ final class PackingFlowTests: XCTestCase {
     }
 
     func testEmptyListCopyDependsOnWhetherASourceFailed() {
-        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da imballare.")
+        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da preparare.")
         XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Una fonte non risponde. Potrebbero mancare ordini.")
         let failed = SourceState(name: "fixture", status: "unavailable", errorCode: "fixture_unavailable", lastSuccessAt: nil)
         let catalog = SourceState(name: "products", status: "unavailable", errorCode: "x", lastSuccessAt: nil)

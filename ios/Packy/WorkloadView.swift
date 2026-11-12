@@ -47,7 +47,7 @@ struct WorkloadView: View {
                     Task { openError = await model.cancel(order) }
                 }
             } message: { _ in
-                Text("L'ordine torna tra quelli da imballare. Svuota la scatola.")
+                Text("L'ordine torna tra quelli da preparare. Svuota la scatola.")
             }
             .navigationDestination(item: $opened) { pack in
                 PackScreen(model: pack) { next in
@@ -127,7 +127,7 @@ struct WorkloadView: View {
         if let active { continueCard(active) }
 
         VStack(spacing: 8) {
-            SectionLabel(active == nil ? "Ordini da imballare" : "Prossimi")
+            SectionLabel(active == nil ? "Ordini da preparare" : "Prossimi")
             if upNext.isEmpty {
                 VStack(spacing: 10) {
                     // An emoji only when the list is truly empty: that is good news. A failed source keeps the plain icon.
@@ -179,8 +179,8 @@ struct WorkloadView: View {
     private func tabs(_ workload: Workload) -> some View {
         let toPack = PackingFlow.packableOrders(workload.orders).count
         return HStack(spacing: 4) {
-            tabButton("Da imballare", count: toPack, value: .toPack)
-            tabButton("Imballati", count: model.packed.count, value: .packed)
+            tabButton("Da preparare", count: toPack, value: .toPack)
+            tabButton("Preparati", count: model.packed.count, value: .packed)
         }
         .padding(4)
         .background(Color(hex: 0xE9E7E1), in: RoundedRectangle(cornerRadius: 13))
@@ -238,7 +238,7 @@ struct WorkloadView: View {
                     .font(.system(size: 28, weight: .medium))
                     .foregroundStyle(Theme.secondary)
                     .accessibilityHidden(true)
-                Text(query.isEmpty ? "Nessun ordine imballato negli ultimi 30 giorni." : "Nessun ordine trovato.")
+                Text(query.isEmpty ? "Nessun ordine preparato negli ultimi 30 giorni." : "Nessun ordine trovato.")
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondary)
                     .multilineTextAlignment(.center)
@@ -391,7 +391,7 @@ private struct PackedRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Imballato. \(order.recipient ?? "Cliente senza nome"), \(order.reference), \(order.units) \(PackingFlow.unitWord(order.units)), da \(order.completedByName)")
+        .accessibilityLabel("Preparato. \(order.recipient ?? "Cliente senza nome"), \(order.reference), \(order.units) \(PackingFlow.unitWord(order.units)), da \(order.completedByName)")
     }
 }
 
