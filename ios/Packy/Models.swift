@@ -46,7 +46,7 @@ struct WorkloadOrder: Decodable, Identifiable {
     var id: String { source + orderId }
 }
 
-/// A finished order for the "Imballati" tab. Read-only.
+/// A finished order for the "Preparati" tab. Read-only.
 struct PackedOrder: Decodable, Identifiable {
     let completedAt: Double
     let source: String

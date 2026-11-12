@@ -96,7 +96,7 @@ function getOrder(db: DatabaseSync, source: string, orderId: string): OrderRow {
 
 function getPack(db: DatabaseSync, packId: string): PackRow {
   const row = db.prepare('SELECT * FROM packs WHERE id = ?').get(packId) as PackRow | undefined;
-  if (!row) throw new ApiError(404, 'pack_not_found', 'Questo imballo non esiste.');
+  if (!row) throw new ApiError(404, 'pack_not_found', 'Questa preparazione non esiste.');
   return row;
 }
 
@@ -205,7 +205,7 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   const open = db.prepare(`SELECT * FROM discrepancies WHERE pack_id = ? AND status = 'open' ORDER BY created_at`).all(pack.id) as unknown as DiscrepancyRow[];
   const fresh = freshness(ctx, order);
   const blockers: Blocker[] = [];
-  if (!order.eligible) blockers.push({ code: 'order_ineligible', message: order.ineligible_reason ?? 'Questo ordine non si può imballare.' });
+  if (!order.eligible) blockers.push({ code: 'order_ineligible', message: order.ineligible_reason ?? 'Questo ordine non si può preparare.' });
   if (changes.length > 0) blockers.push({ code: 'order_changed', message: 'L\'ordine è cambiato dopo l\'inizio. Controlla le modifiche.' });
   if (fresh.state !== 'current') blockers.push({ code: 'stale_data', message: fresh.message ?? 'I dati dell\'ordine non sono aggiornati.' });
   const catalog = catalogProblem(ctx);
@@ -271,7 +271,7 @@ export function openPack(ctx: Ctx, user: User, source: string, orderId: string):
     if (existing) return buildView(ctx, existing, user);
     const already = otherOpenOrder(ctx.db, user.id, null);
     if (already) refuseSecondOrder(already);
-    if (!order.eligible) throw new ApiError(409, 'order_ineligible', order.ineligible_reason ?? 'Questo ordine non si può imballare.');
+    if (!order.eligible) throw new ApiError(409, 'order_ineligible', order.ineligible_reason ?? 'Questo ordine non si può preparare.');
     const id = randomUUID();
     ctx.db.prepare('INSERT INTO packs (id, source, order_id, status, owner_user_id, accepted_lines, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
       .run(id, source, orderId, 'active', user.id, order.lines, ctx.now(), ctx.now());
@@ -285,8 +285,8 @@ interface Guard { pack: PackRow; view: PackView }
 function guardWrite(ctx: Ctx, packId: string, user: User, version: number | null): Guard {
   const pack = getPack(ctx.db, packId);
   const view = buildView(ctx, pack, user);
-  if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.', { pack: view });
-  if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', `${view.ownerName} sta imballando questo ordine.`, { pack: view });
+  if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questa preparazione è chiusa.', { pack: view });
+  if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', `${view.ownerName} sta preparando questo ordine.`, { pack: view });
   if (version !== null && version !== pack.version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato su un altro schermo. Controlla l\'avanzamento.', { pack: view });
   return { pack, view };
 }
@@ -307,7 +307,7 @@ function idempotent<T>(ctx: Ctx, actionId: string, packId: string, fn: () => T):
 }
 
 function requireScannable(view: PackView): void {
-  if (!view.eligible) throw new ApiError(409, 'order_ineligible', view.ineligibleReason ?? 'Questo ordine non si può imballare.', { pack: view });
+  if (!view.eligible) throw new ApiError(409, 'order_ineligible', view.ineligibleReason ?? 'Questo ordine non si può preparare.', { pack: view });
   if (view.changes.length > 0) throw new ApiError(409, 'order_changed', 'L\'ordine è cambiato. Controlla le modifiche prima di continuare.', { pack: view });
 }
 
@@ -551,7 +551,7 @@ function requireCurrentVersion(ctx: Ctx, pack: PackRow, user: User, version: num
 export function takeOver(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
+    if (pack.status !== 'active') throw new ApiError(409, 'pack_not_active', 'Questa preparazione è chiusa.');
     requireCurrentVersion(ctx, pack, user, version);
     if (pack.owner_user_id === user.id) return buildView(ctx, pack, user);
     const already = otherOpenOrder(ctx.db, user.id, pack.id);
@@ -578,7 +578,7 @@ export function complete(ctx: Ctx, user: User, packId: string, actionId: string,
 export function reopen(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status !== 'completed') throw new ApiError(409, 'pack_not_completed', 'Si può riaprire solo un ordine imballato.');
+    if (pack.status !== 'completed') throw new ApiError(409, 'pack_not_completed', 'Si può riaprire solo un ordine preparato.');
     requireCurrentVersion(ctx, pack, user, version);
     const already = otherOpenOrder(ctx.db, user.id, pack.id);
     if (already) refuseSecondOrder(already);
@@ -607,8 +607,8 @@ export function restart(ctx: Ctx, user: User, packId: string, actionId: string, 
 export function release(ctx: Ctx, user: User, packId: string, actionId: string, version: number): { released: true } {
   return idempotent(ctx, actionId, packId, () => {
     const pack = getPack(ctx.db, packId);
-    if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'Questo imballo è chiuso.');
-    if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi sta imballando può svuotare la scatola.');
+    if (pack.status === 'released') throw new ApiError(409, 'pack_not_active', 'Questa preparazione è chiusa.');
+    if (pack.owner_user_id !== user.id) throw new ApiError(403, 'not_owner', 'Solo chi sta preparando può svuotare la scatola.');
     if (pack.version !== version) throw new ApiError(409, 'stale_version', 'L\'ordine è cambiato. Controlla l\'avanzamento.');
     // "Cancella" on the order list: the owner confirms the box is empty, counts go and the order is free again.
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);

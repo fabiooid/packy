@@ -78,7 +78,7 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     return c.json({ ok: true });
   });
 
-  // The app's "Imballati" tab: the same read-only feed as the dashboard.
+  // The app's "Preparati" tab: the same read-only feed as the dashboard.
   app.get('/v1/packed', (c) => {
     c.header('cache-control', 'no-store');
     return c.json(packing.completedOrders(ctx));
