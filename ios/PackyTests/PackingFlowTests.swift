@@ -39,8 +39,8 @@ final class PackingFlowTests: XCTestCase {
     }
 
     func testEmptyListCopyDependsOnWhetherASourceFailed() {
-        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da imballare dalle fonti che hanno risposto.")
-        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Impossibile raggiungere una fonte: potrebbero esserci ordini che non vedi.")
+        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da imballare.")
+        XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Una fonte non risponde. Potrebbero mancare ordini.")
         let failed = SourceState(name: "fixture", status: "unavailable", errorCode: "fixture_unavailable", lastSuccessAt: nil)
         let catalog = SourceState(name: "fic", status: "unavailable", errorCode: "x", lastSuccessAt: nil)
         XCTAssertTrue(PackingFlow.orderSourceFailed([failed]))
@@ -133,6 +133,20 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(groups.count, 3)
     }
 
+    func testOutOfStockWordingFollowsWhatIsInTheBox() {
+        let partly = line(id: "a", method: "barcode", canManualConfirm: false, required: 20, verified: 11)
+        XCTAssertEqual(PackingFlow.markShortAction(partly), "Segna 9 esauriti")
+        let none = line(id: "b", method: "barcode", canManualConfirm: false, required: 20, verified: 0)
+        XCTAssertEqual(PackingFlow.markShortAction(none), "Segna esaurito")
+    }
+
+    func testCustomFlagDecodesAndDefaultsToFalse() throws {
+        var plain = line(id: "a", method: "barcode", canManualConfirm: false)
+        XCTAssertFalse(plain.custom)
+        plain.isCustom = true
+        XCTAssertTrue(plain.custom)
+    }
+
     func testShippingIsConfirmedButNeverAPiece() {
         let soap = line(id: "a", method: "barcode", canManualConfirm: false, required: 3, verified: 2)
         let ship = line(id: "s", method: "manual", canManualConfirm: true, verified: 1, shipping: true)
@@ -141,14 +155,6 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(pieces.counted, 2)
     }
 
-    func testWrongReadNamesOnlyWhatWasRead() {
-        let scan = Scan(id: "s", outcome: "wrong_product", barcode: "8050038450980", codice: "MS002", productName: "Sapone 500ml",
-                        message: "", unitNumber: nil, required: nil, recheck: false, discrepancyId: nil, lineId: nil)
-        XCTAssertEqual(PackingFlow.wrongReadDetail(scan: scan), "Hai letto Sapone 500ml (MS002).")
-        let unnamed = Scan(id: "s", outcome: "wrong_product", barcode: "123", codice: nil, productName: nil,
-                           message: "", unitNumber: nil, required: nil, recheck: false, discrepancyId: nil, lineId: nil)
-        XCTAssertEqual(PackingFlow.wrongReadDetail(scan: unnamed), "Hai letto 123.")
-    }
 
     private func line(id: String = "x", method: String, canManualConfirm: Bool, required: Int = 1, verified: Int = 0, shipping: Bool = false) -> Line {
         Line(

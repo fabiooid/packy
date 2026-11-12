@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../src/app.ts';
 import { addOperator } from '../src/auth.ts';
-import { lookupBarcode, saveBarcodes } from '../src/catalog.ts';
+import { lookupBarcode, replaceLinks, saveBarcodes } from '../src/catalog.ts';
 import { openDb } from '../src/db.ts';
 import { ORDER_MAX_AGE_MS, SCAN_OFFER_MS } from '../src/pack.ts';
 import { FIXTURE_BARCODES, fixtureSources } from '../src/sources/fixture.ts';
@@ -142,6 +142,40 @@ describe('2. identity', () => {
   });
 });
 
+describe('product links', () => {
+  test('a saved link maps a source SKU or id to our product; otherwise the SKU must equal the code', async () => {
+    fixture.orders[1].lines.push(
+      { lineId: 'f2-faire-sku', sku: 'CARD-250', title: 'Cardamomo hand soap', variantTitle: null, required: 1, kind: 'physical', kindReason: null },
+      { lineId: 'f2-faire-id', sku: null, title: 'Candle', variantTitle: null, required: 1, kind: 'physical', kindReason: null,
+        keys: [{ type: 'variant_id', value: 'po_v_123' }] },
+    );
+    await refresh(ana);
+    replaceLinks(db, [
+      { source: 'fixture', keyType: 'sku', key: 'CARD-250', codice: 'MS001' },
+      { source: 'fixture', keyType: 'variant_id', key: 'po_v_123', codice: 'MS024' },
+      { source: 'other_shop', keyType: 'sku', key: 'MS002', codice: 'MS024' },
+    ]);
+    const p = await open(ana, 'f2');
+    const bySku = p.lines.find((l: any) => l.lineId === 'f2-faire-sku');
+    assert.equal(bySku.identity.codice, 'MS001');
+    assert.equal(bySku.identity.matchedBy, 'link');
+    assert.equal(bySku.isCustom, false);
+    const byId = p.lines.find((l: any) => l.lineId === 'f2-faire-id');
+    assert.equal(byId.identity.codice, 'MS024');
+    assert.equal(byId.verification.method, 'barcode', 'a linked product is scanned like any other');
+    const plain = p.lines.find((l: any) => l.lineId === 'f2-a');
+    assert.equal(plain.identity.codice, 'MS002', 'links for another source do not apply');
+    assert.equal(plain.identity.matchedBy, 'sku');
+  });
+  test('a link to a code that is not in the product list leaves the line custom', async () => {
+    fixture.orders[1].lines.push({ lineId: 'f2-x', sku: 'OLD-1', title: 'Vecchio prodotto', variantTitle: null, required: 1, kind: 'physical', kindReason: null });
+    await refresh(ana);
+    replaceLinks(db, [{ source: 'fixture', keyType: 'sku', key: 'OLD-1', codice: 'MS777' }]);
+    const p = await open(ana, 'f2');
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f2-x').isCustom, true);
+  });
+});
+
 describe('3 and 6. units, detection, repeated reads', () => {
   test('detection alone adds nothing and one confirmed unit does not satisfy quantity 3', async () => {
     let p = await open(ana, 'f1');
@@ -192,7 +226,7 @@ describe('4. wrong product and excess', () => {
     assert.equal(s.json.scan.codice, 'MS002');
     assert.equal(s.json.scan.productName, 'Cardamomo Sapone Mani 500ml');
     assert.match(s.json.scan.message, /Prodotto sbagliato\. Non contato/);
-    assert.match(s.json.scan.message, /Hai letto Cardamomo Sapone Mani 500ml \(MS002\)\.$/);
+    assert.equal(s.json.scan.message, 'Prodotto sbagliato. Non contato.');
     assert.doesNotMatch(s.json.scan.message, /MS001/, 'never suggests the right product');
     assert.equal(s.json.pack.lines[0].verified, 0);
     assert.equal(s.json.scan.id.length > 0, true);
@@ -227,7 +261,7 @@ describe('product-first scanning', () => {
     const p = await open(ana, 'f1');
     const other = await scanFor(ana, p, MS001, 'f1-b');
     assert.equal(other.json.scan.outcome, 'wrong_product');
-    assert.match(other.json.scan.message, /^Prodotto sbagliato\. Non contato\. Hai letto .*\(MS001\)\.$/);
+    assert.equal(other.json.scan.message, 'Prodotto sbagliato. Non contato.');
     assert.doesNotMatch(other.json.scan.message, /MS024/);
     assert.equal(other.json.pack.lines[0].verified, 0);
     const right = await scanFor(ana, p, MS024, 'f1-b');
@@ -432,16 +466,21 @@ describe('v1 session and counting rules', () => {
     assert.equal(next.orderId, 'f2');
   });
 
-  test('an order with a line that can never be verified can be emptied and left', async () => {
+  test('an item not in the product list is a custom item: shown as such, confirmed by hand, never blocking', async () => {
     fixture.orders[1].lines.push({
-      lineId: 'f2-ghost', sku: 'MS999', title: 'Articolo sconosciuto', variantTitle: null, required: 1, kind: 'physical', kindReason: null,
+      lineId: 'f2-custom', sku: 'MS999', title: 'Incisione personalizzata', variantTitle: null, required: 1, kind: 'physical', kindReason: null,
     });
     await refresh(ana);
     let p = await open(ana, 'f2');
-    p = await packUnit(ana, p, MS002);
-    assert.ok(codes(p).includes('identity_unresolved'));
-    assert.equal(p.canEmptyAndLeave, true);
-    assert.equal((await act(ana, p, 'release')).status, 200);
+    const custom = p.lines.find((l: any) => l.lineId === 'f2-custom');
+    assert.equal(custom.isCustom, true);
+    assert.equal(custom.identity.sourceTitle, 'Incisione personalizzata');
+    assert.equal(custom.verification.method, 'manual');
+    assert.equal(custom.state, 'todo');
+    assert.ok(!codes(p).includes('identity_unresolved'));
+    p = await packUnits(ana, p, [MS002, MS040]);
+    p = await confirmManualLines(ana, p);
+    assert.equal(p.canComplete, true);
   });
 
   test('scans in any order track the matching line without counting until confirm', async () => {
@@ -777,6 +816,46 @@ describe('manual confirm for barcodeless lines', () => {
     assert.equal(res.json.orders.length, 1);
     assert.equal(res.json.orders[0].reference, '#FIX-1002 free sample');
     assert.equal(res.json.orders[0].completedByName, 'Ana');
+  });
+
+  test('out-of-stock pieces let the order finish as partial, and can be undone first', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001); // 1 of 3 soap in the box
+    const mark = (pack: any, lineId: string, quantity: number) =>
+      call(ana, 'POST', `/v1/packs/${pack.id}/lines/${lineId}/short`, { quantity, actionId: randomUUID(), version: pack.version });
+    assert.equal((await mark(p, 'f1-a', 3)).json.error.code, 'bad_quantity', 'cannot mark more than what is left');
+    assert.equal((await mark(p, 'f1-ship', 1)).json.error.code, 'shipping_line');
+    assert.equal((await call(ben, 'POST', `/v1/packs/${p.id}/lines/f1-a/short`, { quantity: 2, actionId: randomUUID(), version: p.version })).status, 403);
+    p = (await mark(p, 'f1-a', 2)).json;
+    const soap = p.lines.find((l: any) => l.lineId === 'f1-a');
+    assert.equal(soap.short, 2);
+    assert.equal(soap.remaining, 0);
+    assert.equal(soap.state, 'done');
+    assert.equal(soap.canMarkShort, false);
+    assert.equal(p.partial, true);
+    p = (await mark(p, 'f1-a', 0)).json; // undo
+    assert.equal(p.partial, false);
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-a').remaining, 2);
+    p = (await mark(p, 'f1-a', 2)).json;
+    p = await packUnit(ana, p, MS024);
+    p = await confirmManualLines(ana, p);
+    assert.equal(p.canComplete, true);
+    p = (await act(ana, p, 'complete')).json;
+    assert.equal(p.status, 'completed');
+    assert.equal(p.partial, true);
+    const [o] = (await call(ana, 'GET', '/v1/packed')).json.orders;
+    assert.equal(o.units, 2);
+    assert.equal(o.shortUnits, 2);
+  });
+
+  test('restart clears out-of-stock marks', async () => {
+    let p = await open(ana, 'f1');
+    p = await packUnit(ana, p, MS001);
+    p = (await call(ana, 'POST', `/v1/packs/${p.id}/lines/f1-a/short`, { quantity: 2, actionId: randomUUID(), version: p.version })).json;
+    assert.equal(p.partial, true);
+    p = (await act(ana, p, 'restart')).json;
+    assert.equal(p.partial, false);
+    assert.equal(p.lines.find((l: any) => l.lineId === 'f1-a').short, 0);
   });
 
   test('the dashboard reports pieces confirmed by hand', async () => {

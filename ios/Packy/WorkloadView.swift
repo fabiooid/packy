@@ -33,7 +33,7 @@ struct WorkloadView: View {
                         case .packed: packedList
                         }
                     } else if case .loading = model.loadState {
-                        ProgressView("Controllo ordini...").padding(.top, 40)
+                        ProgressView("Carico gli ordini…").padding(.top, 40)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -47,7 +47,7 @@ struct WorkloadView: View {
                     Task { openError = await model.cancel(order) }
                 }
             } message: { _ in
-                Text("I conteggi tornano a 0 e l'ordine torna tra quelli da imballare. Togli tutto dalla scatola.")
+                Text("L'ordine torna tra quelli da imballare. Svuota la scatola.")
             }
             .navigationDestination(item: $opened) { pack in
                 PackScreen(model: pack) { next in
@@ -121,7 +121,7 @@ struct WorkloadView: View {
 
         // The empty state says the same thing, so the notice shows only above a list.
         if sourceFailed && !upNext.isEmpty {
-            Notice(title: "Una fonte non risponde", detail: "Potrebbero esserci ordini che non vedi.", icon: "wifi.exclamationmark")
+            Notice(title: "Una fonte non risponde", detail: "Potrebbero mancare ordini.", icon: "wifi.exclamationmark")
         }
 
         if let active { continueCard(active) }
@@ -254,7 +254,7 @@ struct WorkloadView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(group.orders.enumerated()), id: \.element.id) { index, order in
                             PackedRow(order: order)
-                            if index < group.orders.count - 1 { Divider().overlay(Theme.divider).padding(.leading, 58) }
+                            if index < group.orders.count - 1 { Divider().overlay(Theme.divider).padding(.leading, 16) }
                         }
                     }
                     .card()
@@ -354,7 +354,7 @@ struct WorkloadView: View {
             } catch APIFailure.rejected(_, let message, _) {
                 openError = message
             } catch {
-                openError = "Server non raggiungibile: l'ordine non è stato aperto."
+                openError = "Server non raggiungibile. Ordine non aperto."
             }
         }
     }
@@ -375,15 +375,16 @@ private struct PackedRow: View {
     let order: PackedOrder
 
     var body: some View {
+        // No check mark per row: everything in this tab is packed.
         HStack(spacing: 12) {
-            Circle().fill(Theme.success).frame(width: 30, height: 30)
-                .overlay(Image(systemName: "checkmark").font(.caption.weight(.heavy)).foregroundStyle(.white))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(order.recipient ?? "Cliente senza nome").font(.headline).foregroundStyle(Theme.ink)
-                Text("\(order.reference) · \(order.units) \(PackingFlow.unitWord(order.units)) · \(order.date.formatted(date: .omitted, time: .shortened)) · \(order.completedByName)")
+                Text("\(order.reference) · \(order.units) \(PackingFlow.unitWord(order.units)) · \(order.date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "it_IT")))) · \(order.completedByName)")
                     .font(.footnote).foregroundStyle(Theme.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                if let short = order.shortUnits, short > 0 {
+                    Chip(text: "Parziale · \(short) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
+                }
             }
             Spacer(minLength: 0)
         }

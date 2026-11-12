@@ -31,7 +31,7 @@ final class AppModel {
         } catch APIFailure.rejected(_, let message, _) {
             loginError = message
         } catch {
-            loginError = "Server non raggiungibile. Accesso non effettuato."
+            loginError = "Server non raggiungibile. Riprova."
         }
     }
 
@@ -58,7 +58,7 @@ final class AppModel {
         } catch APIFailure.signedOut {
             signOutLocally()
         } catch {
-            loadState = .failed("Potrebbero esserci ordini che non vedi. Riprova quando torna la connessione.")
+            loadState = .failed("Controlla la connessione e riprova.")
         }
     }
 
@@ -76,7 +76,7 @@ final class AppModel {
         } catch APIFailure.rejected(_, let message, _) {
             return message
         } catch {
-            return "La richiesta non ha raggiunto il server. Non è cambiato nulla. Riprova."
+            return "Server non raggiungibile. Riprova."
         }
     }
 

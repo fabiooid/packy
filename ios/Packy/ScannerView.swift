@@ -27,7 +27,7 @@ struct ScannerPanel: View {
             if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
                 CameraScanner(onRead: onRead).overlay { AimGuide() }
             } else {
-                unavailable("Questo iPhone ora non può scansionare, quindi non si può verificare nulla.")
+                unavailable("Fotocamera non disponibile su questo iPhone.")
             }
         case .notDetermined:
             Color.black.task {
@@ -36,7 +36,7 @@ struct ScannerPanel: View {
             }
         default:
             VStack(spacing: 10) {
-                unavailable("L'accesso alla fotocamera è disattivato, quindi non si può verificare nulla.")
+                unavailable("Fotocamera disattivata. Attivala nelle Impostazioni.")
                 Button("Apri Impostazioni") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }

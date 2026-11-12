@@ -1,13 +1,13 @@
 import { serve } from '@hono/node-server';
 import { readFileSync } from 'node:fs';
 import { createApp } from './app.ts';
-import { loadPolicies, replaceFeed } from './catalog.ts';
+import { loadPolicies, replaceFeed, replaceLinks } from './catalog.ts';
 import { openDb } from './db.ts';
 import { ficCatalog } from './sources/fic.ts';
 import { fixtureSources } from './sources/fixture.ts';
 import type { FixtureControl } from './sources/fixture.ts';
 import { shopifySources } from './sources/shopify.ts';
-import type { BarcodeEntry, Sources } from './types.ts';
+import type { BarcodeEntry, ProductLink, Sources } from './types.ts';
 
 const env = process.env;
 const fixtures = env.PACKY_FIXTURES === '1';
@@ -33,6 +33,8 @@ if (fixtures) {
   }
   const artifact = JSON.parse(readFileSync(new URL('barcode-map.json', dataDir), 'utf8')) as { entries: BarcodeEntry[] };
   replaceFeed(db, 'marketplace_register', artifact.entries.filter((e) => e.provenance === 'marketplace_register'), Date.now());
+  const links = JSON.parse(readFileSync(new URL('product-links.json', dataDir), 'utf8')) as { links: ProductLink[] };
+  replaceLinks(db, links.links);
   sources = {
     fixture: false,
     orders: shopify ? [shopify.orders] : [],

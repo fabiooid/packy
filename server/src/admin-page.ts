@@ -45,6 +45,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .row { display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--divider); }
 .check { width: 36px; height: 36px; border-radius: 18px; background: var(--success); display: flex; align-items: center; justify-content: center; }
 .check svg { width: 20px; height: 20px; }
+.status.partial { background: var(--warn-bg); color: var(--warn); }
+.status.partial::before { background: var(--warn); }
 .status { display: inline-flex; align-items: center; gap: 6px; background: var(--success-soft); color: var(--success); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .status::before { content: ""; width: 7px; height: 7px; border-radius: 4px; background: var(--success); }
 .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
@@ -194,7 +196,9 @@ export const ADMIN_JS = `(() => {
       mid.append(el('div', 'ref', o.reference + ' · ' + o.units + (o.units === 1 ? ' pezzo' : ' pezzi') + (o.manualUnits ? ' · ' + o.manualUnits + ' a mano' : '')));
       row.append(mid);
       const right = el('div', 'right');
-      right.append(el('span', 'status', 'Imballato alle ' + timeFmt.format(o.completedAt)));
+      right.append(o.shortUnits
+        ? el('span', 'status partial', 'Parziale · ' + o.shortUnits + ' da spedire')
+        : el('span', 'status', 'Imballato alle ' + timeFmt.format(o.completedAt)));
       const by = el('div', 'by', 'da '); by.append(el('b', null, o.completedByName)); right.append(by);
       row.append(right);
       card.append(row);
