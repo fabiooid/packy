@@ -13,9 +13,10 @@ export interface Identity {
   /** How the product was found: a saved link for this source, or the SKU equal to the product code. */
   matchedBy?: 'link' | 'sku' | null;
   codice: string | null;
-  ficName: string | null;
+  /** The name in the product list, size included. */
+  productName: string | null;
   reason: string | null;
-  /** Diagnostic only. Never an FIC name. */
+  /** The title from the order, shown for custom items. */
   sourceTitle: string;
 }
 
@@ -100,7 +101,7 @@ function linkedCodice(db: DatabaseSync, source: string, keyType: string, key: st
  */
 export function resolveIdentity(db: DatabaseSync, line: SourceLine, source = ''): Identity {
   const sourceTitle = [line.title, line.variantTitle].filter(Boolean).join(' ');
-  const custom: Identity = { status: 'unresolved', matchedBy: null, codice: null, ficName: null, reason: null, sourceTitle };
+  const custom: Identity = { status: 'unresolved', matchedBy: null, codice: null, productName: null, reason: null, sourceTitle };
   const candidates: { codice: string; by: 'link' | 'sku' }[] = [];
   for (const k of line.keys ?? []) {
     const c = linkedCodice(db, source, k.type, k.value);
@@ -114,7 +115,7 @@ export function resolveIdentity(db: DatabaseSync, line: SourceLine, source = '')
   }
   for (const c of candidates) {
     const name = productName(db, c.codice);
-    if (name !== null) return { status: 'resolved', matchedBy: c.by, codice: c.codice, ficName: name, reason: null, sourceTitle };
+    if (name !== null) return { status: 'resolved', matchedBy: c.by, codice: c.codice, productName: name, reason: null, sourceTitle };
   }
   return custom;
 }

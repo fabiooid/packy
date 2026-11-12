@@ -24,4 +24,4 @@ for (const [i, row] of rows.entries()) {
 }
 artifact.links.sort((a, b) => a.source.localeCompare(b.source) || a.key.localeCompare(b.key));
 writeFileSync(target, JSON.stringify(artifact, null, 2) + '\n');
-console.log(`${added} links added, ${replaced} replaced. Restart the server to load them. Links to codes missing from Fatture in Cloud are ignored and the line shows as Custom.`);
+console.log(`${added} links added, ${replaced} replaced. Restart the server to load them. Links to codes missing from the product list are ignored and the line shows as Custom.`);

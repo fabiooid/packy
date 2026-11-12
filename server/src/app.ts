@@ -28,6 +28,14 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     return c.json({ error: { code: 'server_error', message: 'Errore del server. Non registrato.' } }, 500);
   });
 
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('strict-transport-security', 'max-age=31536000');
+    c.header('x-content-type-options', 'nosniff');
+    c.header('referrer-policy', 'no-referrer');
+    if (c.req.path.startsWith('/v1/')) c.header('cache-control', 'no-store');
+  });
+
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   // Read-only web dashboard. The page itself holds no data; it signs in and reads /v1/admin/completed.

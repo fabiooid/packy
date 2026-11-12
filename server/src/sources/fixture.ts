@@ -1,3 +1,4 @@
+import { PRODUCTS_STATUS } from '../types.ts';
 import type { BarcodeEntry, CatalogProduct, SourceOrder, Sources } from '../types.ts';
 
 /**
@@ -42,11 +43,11 @@ export function fixtureOrders(): SourceOrder[] {
 }
 
 export const FIXTURE_CATALOG: CatalogProduct[] = [
-  { code: 'MS001', name: 'Cardamomo Sapone Mani 250ml', ficId: 'fixture-1' },
-  { code: 'MS002', name: 'Cardamomo Sapone Mani 500ml', ficId: 'fixture-2' },
-  { code: 'MS010', name: 'Travel Kit', ficId: 'fixture-10' },
-  { code: 'MS024', name: 'Prodotto di prova MS024', ficId: 'fixture-24' },
-  { code: 'MS040', name: 'Prodotto di prova MS040', ficId: 'fixture-40' },
+  { code: 'MS001', name: 'Cardamomo Sapone Mani 250ml', externalId: 'fixture-1' },
+  { code: 'MS002', name: 'Cardamomo Sapone Mani 500ml', externalId: 'fixture-2' },
+  { code: 'MS010', name: 'Travel Kit', externalId: 'fixture-10' },
+  { code: 'MS024', name: 'Prodotto di prova MS024', externalId: 'fixture-24' },
+  { code: 'MS040', name: 'Prodotto di prova MS040', externalId: 'fixture-40' },
 ];
 
 export const FIXTURE_BARCODES: BarcodeEntry[] = [
@@ -75,7 +76,7 @@ export function fixtureSources(): FixtureControl {
           return structuredClone(control.orders);
         },
       }],
-      catalog: { name: 'fic', pull: async () => FIXTURE_CATALOG },
+      catalog: { name: PRODUCTS_STATUS, pull: async () => FIXTURE_CATALOG },
       barcodes: [{ name: 'fixture', pull: async () => FIXTURE_BARCODES }],
       notConnected: [{ name: 'faire', reason: 'No authorized token.' }],
     },

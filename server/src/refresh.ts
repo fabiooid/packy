@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { tx } from './db.ts';
 import { replaceFeed } from './catalog.ts';
 import { findLivePack } from './pack.ts';
+import { PRODUCTS_STATUS } from './types.ts';
 import type { CatalogProduct, Sources, SourceOrder } from './types.ts';
 
 function errorCode(error: unknown): string {
@@ -67,16 +68,18 @@ async function refreshSource<T>(
 /** Runs only when a person logs in, opens the app, or refreshes. Nothing schedules this. */
 export async function refreshAll(db: DatabaseSync, sources: Sources, now: () => number): Promise<void> {
   const jobs: Promise<void>[] = [];
+  const unreachable = sources.prepare ? await sources.prepare() : [];
+  for (const u of unreachable) setStatus(db, u.name, 'unavailable', u.code, now());
 
   if (sources.catalog) {
     const catalog = sources.catalog;
     jobs.push(refreshSource(db, catalog.name, now, () => catalog.pull(), (products: CatalogProduct[]) => {
       db.exec('DELETE FROM products');
-      const insert = db.prepare('INSERT INTO products (code, name, fic_id, pulled_at) VALUES (?,?,?,?)');
-      for (const p of products) insert.run(p.code, p.name, p.ficId, now());
+      const insert = db.prepare('INSERT INTO products (code, name, external_id, pulled_at) VALUES (?,?,?,?)');
+      for (const p of products) insert.run(p.code, p.name, p.externalId, now());
     }));
   } else {
-    setStatus(db, 'fic', 'not_connected', 'no_credentials', now());
+    setStatus(db, PRODUCTS_STATUS, 'not_connected', 'not_configured', now());
   }
 
   for (const feed of sources.barcodes) {

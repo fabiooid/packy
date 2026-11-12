@@ -42,9 +42,16 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: false), "Nessun ordine da imballare.")
         XCTAssertEqual(PackingFlow.emptyListMessage(sourceFailed: true), "Una fonte non risponde. Potrebbero mancare ordini.")
         let failed = SourceState(name: "fixture", status: "unavailable", errorCode: "fixture_unavailable", lastSuccessAt: nil)
-        let catalog = SourceState(name: "fic", status: "unavailable", errorCode: "x", lastSuccessAt: nil)
+        let catalog = SourceState(name: "products", status: "unavailable", errorCode: "x", lastSuccessAt: nil)
         XCTAssertTrue(PackingFlow.orderSourceFailed([failed]))
         XCTAssertFalse(PackingFlow.orderSourceFailed([catalog]))
+    }
+
+    func testSourceNamesComeFromTheServerNotAPlatformList() {
+        let name = { (n: String) in SourceState(name: n, status: "ok", errorCode: nil, lastSuccessAt: nil).displayName }
+        XCTAssertEqual(name("products"), "Elenco prodotti")
+        XCTAssertEqual(name("faire"), "Faire")
+        XCTAssertEqual(name("my-shop"), "My Shop")
     }
 
     func testWrongProductCopyNamesWhatTheOrderStillNeeds() {
@@ -169,7 +176,7 @@ final class PackingFlowTests: XCTestCase {
             identity: Identity(
                 status: method == "barcode" ? "resolved" : "unresolved",
                 codice: method == "barcode" ? "MS001" : nil,
-                ficName: method == "barcode" ? "Sapone" : nil,
+                productName: method == "barcode" ? "Sapone" : nil,
                 reason: nil,
                 sourceTitle: "Materiale promozionale"
             ),

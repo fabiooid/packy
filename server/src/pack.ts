@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { tx } from './db.ts';
 import { lookupBarcode, productName, resolveIdentity, resolveVerification } from './catalog.ts';
 import type { Identity, Policies, Verification } from './catalog.ts';
-import { ApiError } from './types.ts';
+import { ApiError, PRODUCTS_STATUS } from './types.ts';
 import type { NonPhysicalRow, Sources, SourceLine, User } from './types.ts';
 
 export interface Ctx {
@@ -167,9 +167,9 @@ function freshness(ctx: Ctx, order: OrderRow): PackView['freshness'] {
 }
 
 function catalogProblem(ctx: Ctx): string | null {
-  const row = ctx.db.prepare(`SELECT last_success_at FROM source_status WHERE source = 'fic'`).get() as { last_success_at: number | null } | undefined;
-  if (!row?.last_success_at) return 'Catalogo FIC non ancora letto. Aggiorna.';
-  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'Catalogo FIC vecchio. Aggiorna prima di confermare.';
+  const row = ctx.db.prepare(`SELECT last_success_at FROM source_status WHERE source = ?`).get(PRODUCTS_STATUS) as { last_success_at: number | null } | undefined;
+  if (!row?.last_success_at) return 'Elenco prodotti non ancora letto. Aggiorna.';
+  if (ctx.now() - row.last_success_at > CATALOG_MAX_AGE_MS) return 'Elenco prodotti vecchio. Aggiorna prima di confermare.';
   return null;
 }
 
@@ -372,7 +372,7 @@ export function recordScan(ctx: Ctx, user: User, packId: string, barcode: string
       name = productName(ctx.db, codice);
       const matching = view.lines.filter((l) => l.identity.codice === codice && (!selected || l.lineId === selected.lineId));
       const open = matching.find((l) => l.state !== 'blocked' && (l.uncertain > 0 || l.remaining > 0));
-      const label = `${codice} ${name ?? '(non nel catalogo FIC)'}`;
+      const label = `${codice} ${name ?? '(non nell\'elenco prodotti)'}`;
       if (matching.length === 0) {
         outcome = 'wrong_product';
         // Short on purpose: no product names. Suggesting the right one invites a second wrong pick.
