@@ -16,7 +16,7 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
-  <key>NSCameraUsageDescription</key><string>Packy legge i codici a barre dei prodotti per controllare cosa va in ogni pacco.</string>
+  <key>NSCameraUsageDescription</key><string>Packy legge i codici a barre e fotografa i prodotti nella scatola aperta.</string>
   <key>PackyAPIURL</key><string>$(PACKY_API_URL)</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>

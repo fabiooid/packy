@@ -22,6 +22,15 @@ enum PackingFlow {
     static let countAction = "Aggiungi"
     static let markDoneConfirm = "Confermi che la scatola corrisponde all'ordine. Non lo spedisce."
     static let wrongProductTitle = "Prodotto sbagliato. Non contato."
+    static let defaultBoxCount = 1
+    static let maxBoxCount = 10
+    static let boxesQuestion = "Quante scatole?"
+    static let photoPrompt = "Fotografa i prodotti nella scatola aperta, non il coperchio chiuso."
+    static let photoCapture = "Scatta foto"
+    static let photoRetake = "Rifai la foto"
+    static let finishNeedsPhotos = "Prima fotografa ogni scatola aperta."
+    static let photosHeading = "Foto delle scatole"
+    static let cameraSimulatorPhoto = "Il simulatore non ha la fotocamera. Usa una foto di prova della scatola aperta."
 
     static func countLabel(verified: Int, required: Int) -> String {
         "\(verified)/\(required)"
@@ -163,5 +172,21 @@ enum PackingFlow {
             return pendingScan?.outcome == "eligible" && pendingScan?.lineId == line.lineId
         }
         return canManualConfirm(line)
+    }
+
+    static func boxWord(_ count: Int) -> String { count == 1 ? "scatola" : "scatole" }
+
+    static func boxLabel(_ index: Int, total: Int) -> String {
+        total <= 1 ? "Scatola aperta" : "Scatola \(index)"
+    }
+
+    static func hasPhotoForEveryBox(boxCount: Int, photoIndexes: [Int]) -> Bool {
+        let n = max(defaultBoxCount, boxCount)
+        let have = Set(photoIndexes.filter { $0 >= 1 && $0 <= n })
+        return have.count == n && (1...n).allSatisfy { have.contains($0) }
+    }
+
+    static func canFinish(canComplete: Bool, boxCount: Int, photoIndexes: [Int]) -> Bool {
+        canComplete && hasPhotoForEveryBox(boxCount: boxCount, photoIndexes: photoIndexes)
     }
 }

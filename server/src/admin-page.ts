@@ -3,7 +3,7 @@
 
 export const ADMIN_CSP = [
   "default-src 'none'", "script-src 'self'", "style-src 'unsafe-inline'", "connect-src 'self'",
-  "img-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+  "img-src 'self' blob:", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
 ].join('; ');
 
 export const ADMIN_HTML = `<!doctype html>
@@ -51,6 +51,14 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .status::before { content: ""; width: 7px; height: 7px; border-radius: 4px; background: var(--success); }
 .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .row:last-child { border-bottom: none; }
+.order { border-bottom: 1px solid var(--divider); }
+.order:last-child { border-bottom: none; }
+.order .row { border-bottom: none; }
+.photos { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 16px 14px 66px; }
+.photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: #F4F4F5; cursor: pointer; }
+.lightbox { position: fixed; inset: 0; background: rgba(22, 24, 29, 0.72); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; }
+.lightbox img { max-width: min(720px, 100%); max-height: 80vh; border-radius: 16px; background: #fff; }
+.lightbox p { margin: 0; color: #fff; font-weight: 600; }
 .time { font-variant-numeric: tabular-nums; }
 .who { font-weight: 600; }
 .ref { color: var(--muted); font-size: 13px; }
@@ -106,6 +114,10 @@ header { display: flex; align-items: center; justify-content: space-between; gap
       <button id="next" class="link" type="button">Successivo</button>
     </div>
     <div id="dash-error" class="error" role="alert"></div>
+    <div id="lightbox" class="lightbox" hidden>
+      <img id="lightbox-img" alt="">
+      <p id="lightbox-label"></p>
+    </div>
   </section>
 </main>
 <script src="/admin/app.js"></script>
@@ -150,6 +162,25 @@ export const ADMIN_JS = `(() => {
   const PAGE = 15;
   let page = 0;
   let packed = [];
+  const photoCache = new Map();
+  async function loadPhoto(packId, boxIndex, img) {
+    const key = packId + ':' + boxIndex;
+    if (photoCache.has(key)) { img.src = photoCache.get(key); return; }
+    try {
+      const token = store.get();
+      const res = await fetch('/v1/packs/' + packId + '/photos/' + boxIndex, { headers: token ? { authorization: 'Bearer ' + token } : {} });
+      if (!res.ok) return;
+      const url = URL.createObjectURL(await res.blob());
+      photoCache.set(key, url);
+      img.src = url;
+    } catch {}
+  }
+  function openLightbox(src, label) {
+    $('lightbox-img').src = src;
+    $('lightbox-img').alt = label;
+    $('lightbox-label').textContent = label;
+    $('lightbox').hidden = false;
+  }
 
   function render(data) {
     $('fixture').hidden = !data.fixture;
@@ -201,7 +232,23 @@ export const ADMIN_JS = `(() => {
         : el('span', 'status', 'Preparato alle ' + timeFmt.format(o.completedAt)));
       const by = el('div', 'by', 'da '); by.append(el('b', null, o.completedByName)); right.append(by);
       row.append(right);
-      card.append(row);
+      const wrap = el('div', 'order');
+      wrap.append(row);
+      if (o.photos && o.photos.length) {
+        const photos = el('div', 'photos');
+        for (const p of o.photos) {
+          const img = document.createElement('img');
+          const label = (o.boxCount > 1 ? 'Scatola ' + p.boxIndex : 'Scatola aperta') + ': prodotti nella scatola';
+          img.alt = label;
+          img.width = 72;
+          img.height = 72;
+          loadPhoto(o.packId, p.boxIndex, img);
+          img.addEventListener('click', () => { if (img.src) openLightbox(img.src, label); });
+          photos.append(img);
+        }
+        wrap.append(photos);
+      }
+      card.append(wrap);
     }
     if (pages <= 1) { pager.hidden = true; return; }
     pager.hidden = false;
@@ -229,7 +276,8 @@ export const ADMIN_JS = `(() => {
     store.set(null); show('login');
   });
   $('prev').addEventListener('click', () => { if (page > 0) { page -= 1; drawList(); } });
-  $('next').addEventListener('click', () => { page += 1; drawList(); });
+  $('next').addEventListener('click', () => { page += 1; drawList(); } });
+  $('lightbox').addEventListener('click', () => { $('lightbox').hidden = true; $('lightbox-img').src = ''; });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && store.get()) load(); });
 
   if (store.get()) load(); else show('login');

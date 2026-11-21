@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS packs (
   id TEXT PRIMARY KEY, source TEXT NOT NULL, order_id TEXT NOT NULL, status TEXT NOT NULL,
   owner_user_id INTEGER NOT NULL REFERENCES users(id), version INTEGER NOT NULL DEFAULT 1,
   accepted_lines TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  completed_at INTEGER, completed_by INTEGER
+  completed_at INTEGER, completed_by INTEGER, box_count INTEGER NOT NULL DEFAULT 1
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_live_pack ON packs(source, order_id) WHERE status IN ('active','completed');
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_pack_per_user ON packs(owner_user_id) WHERE status = 'active';
@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS shortages (
   pack_id TEXT NOT NULL REFERENCES packs(id), line_id TEXT NOT NULL, quantity INTEGER NOT NULL,
   user_id INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (pack_id, line_id)
 );
+-- One JPEG of the open box per chosen box. Bytes stay in the packing record, never in git.
+CREATE TABLE IF NOT EXISTS pack_photos (
+  pack_id TEXT NOT NULL REFERENCES packs(id), box_index INTEGER NOT NULL,
+  mime TEXT NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL,
+  PRIMARY KEY (pack_id, box_index)
+);
 CREATE TABLE IF NOT EXISTS actions (action_id TEXT PRIMARY KEY, pack_id TEXT NOT NULL, response TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY, pack_id TEXT NOT NULL, type TEXT NOT NULL, user_id INTEGER, data TEXT, created_at INTEGER NOT NULL
@@ -73,6 +79,8 @@ export function openDb(path: string): DatabaseSync {
   const cols = db.prepare("SELECT name FROM pragma_table_info('products')").all() as { name: string }[];
   if (cols.some((c) => c.name === 'fic_id')) db.exec('DROP TABLE products');
   db.exec(SCHEMA);
+  const packCols = db.prepare("SELECT name FROM pragma_table_info('packs')").all() as { name: string }[];
+  if (!packCols.some((c) => c.name === 'box_count')) db.exec('ALTER TABLE packs ADD COLUMN box_count INTEGER NOT NULL DEFAULT 1');
   db.exec(`DELETE FROM source_status WHERE source = 'fic'`);
   return db;
 }

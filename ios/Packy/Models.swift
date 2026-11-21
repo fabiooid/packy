@@ -46,8 +46,14 @@ struct WorkloadOrder: Decodable, Identifiable {
     var id: String { source + orderId }
 }
 
+struct PackPhoto: Decodable, Identifiable, Hashable {
+    let boxIndex: Int
+    var takenAt: Int? = nil
+    var id: Int { boxIndex }
+}
+
 /// A finished order for the "Preparati" tab. Read-only.
-struct PackedOrder: Decodable, Identifiable {
+struct PackedOrder: Decodable, Identifiable, Hashable {
     let completedAt: Double
     let source: String
     let reference: String
@@ -55,9 +61,14 @@ struct PackedOrder: Decodable, Identifiable {
     let completedByName: String
     let units: Int
     /// Pieces marked out of stock when it was packed. 0 or nil means complete.
-    var shortUnits: Int?
+    var shortUnits: Int? = nil
+    var packId: String? = nil
+    var boxCount: Int? = nil
+    var photos: [PackPhoto]? = nil
     var id: String { "\(source)|\(reference)|\(completedAt)" }
     var date: Date { Date(timeIntervalSince1970: completedAt / 1000) }
+    var boxes: Int { max(PackingFlow.defaultBoxCount, boxCount ?? PackingFlow.defaultBoxCount) }
+    var photoList: [PackPhoto] { photos ?? [] }
 }
 
 struct PackedList: Decodable {
@@ -175,7 +186,22 @@ struct Pack: Decodable {
     let canLeave: Bool
     /// Some pieces were marked out of stock: the box ships without them.
     var partial: Bool?
+    var boxCount: Int?
+    var photos: [PackPhoto]?
+    var photosReady: Bool?
+    var canFinish: Bool?
     var canScan: Bool { status == "active" && isOwner && eligible && changes.isEmpty }
+    var boxes: Int { max(PackingFlow.defaultBoxCount, boxCount ?? PackingFlow.defaultBoxCount) }
+    var photoList: [PackPhoto] { photos ?? [] }
+    var hasAllBoxPhotos: Bool {
+        photosReady ?? PackingFlow.hasPhotoForEveryBox(boxCount: boxes, photoIndexes: photoList.map(\.boxIndex))
+    }
+    var canFinishNow: Bool {
+        canFinish ?? PackingFlow.canFinish(canComplete: canComplete, boxCount: boxes, photoIndexes: photoList.map(\.boxIndex))
+    }
+    func hasPhoto(boxIndex: Int) -> Bool {
+        photoList.contains { $0.boxIndex == boxIndex }
+    }
 }
 
 struct Scan: Decodable {
