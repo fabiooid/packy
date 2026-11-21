@@ -132,11 +132,23 @@ final class PackModel {
         }
     }
 
+    func setBoxCount(_ count: Int) async {
+        await perform("boxes", extra: ["boxCount": count])
+    }
+
+    func uploadPhoto(boxIndex: Int, jpeg: Data) async {
+        await perform("photos", extra: ["boxIndex": boxIndex, "image": jpeg.base64EncodedString()])
+    }
+
     /// The completing tap pulls first, so the order is checked against the source at that moment.
     func completeAfterRefresh() async {
         guard await refresh() else { return }
         guard pack.canComplete else {
             card = .notRecorded("Non confermato: c'è ancora qualcosa da risolvere.")
+            return
+        }
+        guard pack.canFinishNow else {
+            card = .notRecorded(PackingFlow.finishNeedsPhotos)
             return
         }
         await perform("complete")

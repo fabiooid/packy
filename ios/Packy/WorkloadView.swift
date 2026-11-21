@@ -10,6 +10,7 @@ struct WorkloadView: View {
     @State private var cancelling: WorkloadOrder?
     @State private var tab: ListTab = .toPack
     @State private var query = ""
+    @State private var openedPacked: PackedOrder?
 
     enum ListTab { case toPack, packed }
 
@@ -54,6 +55,9 @@ struct WorkloadView: View {
                     pendingNext = next
                     opened = nil
                 }
+            }
+            .navigationDestination(item: $openedPacked) { order in
+                PackedDetailView(order: order)
             }
             .onChange(of: opened) { previous, current in
                 guard current == nil, let previous else { return }
@@ -253,7 +257,8 @@ struct WorkloadView: View {
                     SectionLabel(group.label)
                     VStack(spacing: 0) {
                         ForEach(Array(group.orders.enumerated()), id: \.element.id) { index, order in
-                            PackedRow(order: order)
+                            Button { openedPacked = order } label: { PackedRow(order: order) }
+                                .buttonStyle(.plain)
                             if index < group.orders.count - 1 { Divider().overlay(Theme.divider).padding(.leading, 16) }
                         }
                     }
@@ -385,13 +390,60 @@ private struct PackedRow: View {
                 if let short = order.shortUnits, short > 0 {
                     Chip(text: "Parziale · \(short) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
                 }
+                if !order.photoList.isEmpty {
+                    Text(order.photoList.count == 1 ? "1 foto" : "\(order.photoList.count) foto")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.secondary)
+                }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.track)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Preparato. \(order.recipient ?? "Cliente senza nome"), \(order.reference), \(order.units) \(PackingFlow.unitWord(order.units)), da \(order.completedByName)")
+        .accessibilityHint("Apri per vedere le foto delle scatole")
+    }
+}
+
+private struct PackedDetailView: View {
+    let order: PackedOrder
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Button { dismiss() } label: {
+                    Label("Preparati", systemImage: "chevron.left")
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Torna ai preparati")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(order.recipient ?? "Cliente senza nome").font(Theme.display(24)).foregroundStyle(Theme.ink)
+                    Text("\(order.reference) · \(order.units) \(PackingFlow.unitWord(order.units))")
+                        .font(.subheadline).foregroundStyle(Theme.secondary)
+                    Text("Preparato da \(order.completedByName) alle \(order.date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "it_IT"))))")
+                        .font(.footnote).foregroundStyle(Theme.secondary)
+                }
+                if let short = order.shortUnits, short > 0 {
+                    Chip(text: "Parziale · \(short) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
+                }
+                if let packId = order.packId, !order.photoList.isEmpty {
+                    PackedPhotoStrip(packId: packId, boxCount: order.boxes, photos: order.photoList)
+                } else {
+                    Text("Nessuna foto di scatola.").font(.subheadline).foregroundStyle(Theme.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+        .background(Theme.ground.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 

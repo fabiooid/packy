@@ -114,6 +114,18 @@ export function createApp(ctx: Ctx, fixture: FixtureControl | null = null): Hono
     const b = await body(c);
     return c.json(packing.markShort(ctx, c.get('user'), c.req.param('id'), c.req.param('lineId'), typeof b.quantity === 'number' ? b.quantity : -1, str(b.actionId), num(b.version)));
   });
+  app.post('/v1/packs/:id/boxes', async (c) => {
+    const b = await body(c);
+    return c.json(packing.setBoxCount(ctx, c.get('user'), c.req.param('id'), typeof b.boxCount === 'number' ? b.boxCount : -1, str(b.actionId), num(b.version)));
+  });
+  app.post('/v1/packs/:id/photos', async (c) => {
+    const b = await body(c);
+    return c.json(packing.savePhoto(ctx, c.get('user'), c.req.param('id'), typeof b.boxIndex === 'number' ? b.boxIndex : -1, str(b.image), str(b.actionId), num(b.version)));
+  });
+  app.get('/v1/packs/:id/photos/:boxIndex', (c) => {
+    const photo = packing.readPhoto(ctx, c.req.param('id'), Number(c.req.param('boxIndex')));
+    return c.body(new Uint8Array(photo.bytes), 200, { 'content-type': photo.mime, 'cache-control': 'no-store' });
+  });
   app.post('/v1/packs/:id/discrepancies/:discrepancyId/resolve', async (c) => {
     const b = await body(c);
     return c.json(packing.resolveDiscrepancy(ctx, c.get('user'), c.req.param('id'), c.req.param('discrepancyId'), str(b.resolution), str(b.actionId), num(b.version)));

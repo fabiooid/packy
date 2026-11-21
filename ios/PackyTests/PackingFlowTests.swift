@@ -154,6 +154,52 @@ final class PackingFlowTests: XCTestCase {
         XCTAssertTrue(plain.custom)
     }
 
+    func testFinishStaysLockedWithoutPhotosAndUnlocksForEachBox() {
+        XCTAssertEqual(PackingFlow.defaultBoxCount, 1)
+        XCTAssertFalse(PackingFlow.canFinish(canComplete: true, boxCount: 1, photoIndexes: []))
+        XCTAssertTrue(PackingFlow.canFinish(canComplete: true, boxCount: 1, photoIndexes: [1]))
+        XCTAssertFalse(PackingFlow.canFinish(canComplete: false, boxCount: 1, photoIndexes: [1]))
+        XCTAssertFalse(PackingFlow.canFinish(canComplete: true, boxCount: 2, photoIndexes: [1]))
+        XCTAssertFalse(PackingFlow.canFinish(canComplete: true, boxCount: 2, photoIndexes: [1, 1]))
+        XCTAssertTrue(PackingFlow.canFinish(canComplete: true, boxCount: 2, photoIndexes: [1, 2]))
+        XCTAssertTrue(PackingFlow.canFinish(canComplete: true, boxCount: 3, photoIndexes: [3, 1, 2]))
+        XCTAssertFalse(PackingFlow.hasPhotoForEveryBox(boxCount: 3, photoIndexes: [1, 2]))
+        XCTAssertEqual(PackingFlow.photoPrompt, "Fotografa i prodotti nella scatola aperta, non il coperchio chiuso.")
+        XCTAssertFalse(PackingFlow.photoPrompt.contains("ne mancano"))
+        XCTAssertFalse(PackingFlow.finishNeedsPhotos.contains("ne mancano"))
+        XCTAssertEqual(PackingFlow.boxLabel(1, total: 1), "Scatola aperta")
+        XCTAssertEqual(PackingFlow.boxLabel(2, total: 2), "Scatola 2")
+        XCTAssertEqual(PackingFlow.boxWord(1), "scatola")
+        XCTAssertEqual(PackingFlow.boxWord(2), "scatole")
+    }
+
+    func testSampleBoxPhotoIsSyntheticJpeg() {
+        let data = BoxPhoto.sampleJpeg()
+        XCTAssertGreaterThan(data.count, 24)
+        XCTAssertEqual(data[data.startIndex], 0xFF)
+        XCTAssertEqual(data[data.index(after: data.startIndex)], 0xD8)
+    }
+
+    func testPackedOrderShowsPhotosOnTheRecord() {
+        let order = PackedOrder(
+            completedAt: 0,
+            source: "s",
+            reference: "#1",
+            recipient: "Marta",
+            completedByName: "Ana",
+            units: 2,
+            packId: "pack-1",
+            boxCount: 2,
+            photos: [PackPhoto(boxIndex: 1), PackPhoto(boxIndex: 2)]
+        )
+        XCTAssertEqual(order.boxes, 2)
+        XCTAssertEqual(order.photoList.map(\.boxIndex), [1, 2])
+        XCTAssertTrue(PackingFlow.hasPhotoForEveryBox(boxCount: order.boxes, photoIndexes: order.photoList.map(\.boxIndex)))
+        let single = PackedOrder(completedAt: 0, source: "s", reference: "#2", recipient: nil, completedByName: "Ana", units: 1)
+        XCTAssertEqual(single.boxes, 1)
+        XCTAssertTrue(single.photoList.isEmpty)
+    }
+
     func testShippingIsConfirmedButNeverAPiece() {
         let soap = line(id: "a", method: "barcode", canManualConfirm: false, required: 3, verified: 2)
         let ship = line(id: "s", method: "manual", canManualConfirm: true, verified: 1, shipping: true)

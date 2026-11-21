@@ -583,16 +583,41 @@ private struct ReadyView: View {
 
 
                 if case .recorded = model.card {} else { StatusCard(model: model) }
+
+                BoxCountStepper(count: pack.boxes, enabled: !model.busy) { n in
+                    Task { await model.setBoxCount(n) }
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionLabel(PackingFlow.photosHeading)
+                    Text(PackingFlow.photoPrompt).font(.subheadline).foregroundStyle(Theme.body)
+                    ForEach(1...pack.boxes, id: \.self) { index in
+                        BoxPhotoSlot(
+                            packId: pack.id,
+                            index: index,
+                            total: pack.boxes,
+                            taken: pack.hasPhoto(boxIndex: index),
+                            onCapture: { data in
+                                Task { await model.uploadPhoto(boxIndex: index, jpeg: data) }
+                            }
+                        )
+                    }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
+                if !pack.canFinishNow {
+                    Text(PackingFlow.finishNeedsPhotos)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 HoldToConfirm(title: "Tieni premuto per confermare", color: Theme.success) {
                     Task { await model.completeAfterRefresh() }
                 }
-                .disabled(model.busy)
+                .disabled(model.busy || !pack.canFinishNow)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -658,22 +683,27 @@ private struct PackedView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Spacer()
-            Circle().fill(Theme.success).frame(width: 96, height: 96)
-                .overlay(Image(systemName: "checkmark").font(.system(size: 44, weight: .bold)).foregroundStyle(.white))
-                .accessibilityHidden(true)
-            VStack(spacing: 6) {
-                // The one celebratory moment in the flow. VoiceOver reads the word only.
-                Text("Preparato 🎉").font(Theme.display(34)).foregroundStyle(Theme.ink)
-                    .accessibilityLabel("Preparato")
-                Text(pack.recipient ?? pack.reference).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
-                Text("\(pack.reference) · \(units) \(PackingFlow.unitWord(units))").font(.subheadline).foregroundStyle(Theme.secondary)
-                if PackingFlow.shortTotal(pack.lines) > 0 {
-                    Chip(text: "Parziale · \(PackingFlow.shortTotal(pack.lines)) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
-                        .padding(.top, 4)
+            ScrollView {
+                VStack(spacing: 16) {
+                    Circle().fill(Theme.success).frame(width: 96, height: 96)
+                        .overlay(Image(systemName: "checkmark").font(.system(size: 44, weight: .bold)).foregroundStyle(.white))
+                        .accessibilityHidden(true)
+                    VStack(spacing: 6) {
+                        // The one celebratory moment in the flow. VoiceOver reads the word only.
+                        Text("Preparato 🎉").font(Theme.display(34)).foregroundStyle(Theme.ink)
+                            .accessibilityLabel("Preparato")
+                        Text(pack.recipient ?? pack.reference).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
+                        Text("\(pack.reference) · \(units) \(PackingFlow.unitWord(units))").font(.subheadline).foregroundStyle(Theme.secondary)
+                        if PackingFlow.shortTotal(pack.lines) > 0 {
+                            Chip(text: "Parziale · \(PackingFlow.shortTotal(pack.lines)) da spedire", foreground: Theme.warning, background: Theme.warningSoft)
+                                .padding(.top, 4)
+                        }
+                    }
+                    PackedPhotoStrip(packId: pack.id, boxCount: pack.boxes, photos: pack.photoList)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
             }
-            Spacer()
             VStack(spacing: 8) {
                 if let next {
                     Button { onStartNext(next) } label: {

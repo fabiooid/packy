@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum APIFailure: Error {
     /// The server answered and refused. Nothing was recorded.
@@ -48,5 +49,28 @@ final class APIClient {
         throw APIFailure.rejected(code: detail?.error.code ?? "server_error",
                                   message: detail?.error.message ?? "Richiesta rifiutata. Non registrato.",
                                   pack: detail?.pack)
+    }
+
+    /// Authenticated image download for a packing photo. Same session as the rest of the app.
+    func getData(_ path: String) async throws -> Data {
+        var request = URLRequest(url: Self.baseURL.appending(path: path))
+        request.httpMethod = "GET"
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization") }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw APIFailure.unreachable
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if (200..<300).contains(status) { return data }
+        if status == 401 { throw APIFailure.signedOut }
+        throw APIFailure.rejected(code: "server_error", message: "Richiesta rifiutata. Non registrato.", pack: nil)
+    }
+
+    func loadPhoto(packId: String, boxIndex: Int) async -> UIImage? {
+        guard let data = try? await getData("v1/packs/\(packId)/photos/\(boxIndex)") else { return nil }
+        return UIImage(data: data)
     }
 }

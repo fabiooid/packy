@@ -57,6 +57,31 @@ async function confirmManualLines(t: string, pack: any): Promise<any> {
   }
 }
 const act = (t: string, pack: any, name: string) => call(t, 'POST', `/v1/packs/${pack.id}/${name}`, { actionId: randomUUID(), version: pack.version });
+// 1×1 JPEG, no customer data. Used to stand in for a photo of an open box.
+const JPEG = Buffer.from(
+  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AZ//Z',
+  'base64',
+);
+const addPhoto = async (t: string, pack: any, boxIndex = 1) => {
+  const res = await call(t, 'POST', `/v1/packs/${pack.id}/photos`, {
+    boxIndex, image: JPEG.toString('base64'), actionId: randomUUID(), version: pack.version,
+  });
+  assert.equal(res.status, 200, res.json.error?.message ?? JSON.stringify(res.json));
+  return res.json;
+};
+const setBoxes = async (t: string, pack: any, boxCount: number) => {
+  const res = await call(t, 'POST', `/v1/packs/${pack.id}/boxes`, { boxCount, actionId: randomUUID(), version: pack.version });
+  assert.equal(res.status, 200, res.json.error?.message ?? JSON.stringify(res.json));
+  return res.json;
+};
+/** Default path: one box, one photo, then mark packed. */
+async function finish(t: string, pack: any) {
+  let current = pack;
+  const n = current.boxCount ?? 1;
+  const have = new Set((current.photos ?? []).map((p: any) => p.boxIndex));
+  for (let i = 1; i <= n; i++) if (!have.has(i)) current = await addPhoto(t, current, i);
+  return act(t, current, 'complete');
+}
 const resolve = (t: string, pack: any, id: string, resolution: string) =>
   call(t, 'POST', `/v1/packs/${pack.id}/discrepancies/${id}/resolve`, { resolution, actionId: randomUUID(), version: pack.version });
 const refresh = (t: string) => call(t, 'POST', '/v1/refresh', {});
@@ -324,7 +349,7 @@ describe('5. missing units and nonphysical rows', () => {
     assert.equal(p.canComplete, false);
     p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     assert.equal(p.status, 'completed');
   });
   test('a row of uncertain classification stays on the order and is confirmed by hand when it has no barcode', async () => {
@@ -603,7 +628,7 @@ describe('8. changes and conflicting work', () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
     p = await confirmManualLines(ana, p);
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     fixture.orders[1].lines[0].required = 2;
     await refresh(ana);
     const w = (await call(ana, 'GET', '/v1/workload')).json;
@@ -697,7 +722,7 @@ describe('11. read-only sources', () => {
     let calls = 0;
     globalThis.fetch = (async () => { calls++; throw new Error('unexpected_network'); }) as typeof fetch;
     try {
-      p = (await act(ana, p, 'complete')).json;
+      p = (await finish(ana, p)).json;
     } finally {
       globalThis.fetch = before;
     }
@@ -757,12 +782,16 @@ describe('manual confirm for barcodeless lines', () => {
     let p = await open(ana, 'f2');
     p = await packUnits(ana, p, [MS002, MS040]);
     p = await confirmManualLines(ana, p);
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     const res = await call(ben, 'GET', '/v1/packed');
     assert.equal(res.status, 200);
     assert.equal(res.json.orders.length, 1);
     assert.equal(res.json.orders[0].reference, '#FIX-1002 free sample');
     assert.equal(res.json.orders[0].completedByName, 'Ana');
+    assert.equal(res.json.orders[0].boxCount, 1);
+    assert.equal(res.json.orders[0].photos.length, 1);
+    assert.equal(res.json.orders[0].photos[0].boxIndex, 1);
+    assert.ok(res.json.orders[0].packId);
   });
 
   test('out-of-stock pieces let the order finish as partial, and can be undone first', async () => {
@@ -787,7 +816,7 @@ describe('manual confirm for barcodeless lines', () => {
     p = await packUnit(ana, p, MS024);
     p = await confirmManualLines(ana, p);
     assert.equal(p.canComplete, true);
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     assert.equal(p.status, 'completed');
     assert.equal(p.partial, true);
     const [o] = (await call(ana, 'GET', '/v1/packed')).json.orders;
@@ -809,7 +838,7 @@ describe('manual confirm for barcodeless lines', () => {
     let p = await open(ana, 'f3');
     p = await packUnit(ana, p, MS001);
     p = await confirmManualLines(ana, p);
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     assert.equal(p.status, 'completed');
     const [o] = (await call(ana, 'GET', '/v1/admin/completed')).json.orders;
     assert.equal(o.units, 4);
@@ -870,7 +899,7 @@ describe('web dashboard', () => {
     p = await packUnits(ana, p, [MS002, MS040]);
     p = await confirmManualLines(ana, p);
     clock += 60_000;
-    p = (await act(ana, p, 'complete')).json;
+    p = (await finish(ana, p)).json;
     assert.equal(p.status, 'completed');
     await open(ben, 'f1'); // in progress, must not appear
 
@@ -886,6 +915,10 @@ describe('web dashboard', () => {
     assert.equal(o.manualUnits, 0);
     assert.equal(o.completedAt, clock);
     assert.equal(o.recipient, 'Cliente di prova');
+    assert.equal(o.boxCount, 1);
+    assert.equal(o.photos.length, 1);
+    assert.equal(o.photos[0].boxIndex, 1);
+    assert.ok(o.packId);
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM packs ORDER BY id').all()), before);
     assert.ok(!JSON.stringify(res.json).includes('token'));
 
@@ -912,7 +945,9 @@ describe('web dashboard', () => {
     assert.match(html, /id="pager"/);
     assert.match(html, /Precedente/);
     assert.match(html, /Successivo/);
-    assert.match(csp, /img-src 'self'/);
+    assert.match(csp, /img-src 'self' blob:/);
+    assert.match(source, /loadPhoto/);
+    assert.match(source, /prodotti nella scatola/);
     assert.match(html, /\/admin\/logo\.png/);
     assert.match(html, /\/admin\/favicon\.png/);
     assert.match(html, /\/admin\/favicon\.ico/);
@@ -935,5 +970,102 @@ describe('web dashboard', () => {
     const ico = await app.request('/admin/favicon.ico');
     assert.equal(ico.status, 200);
     assert.match(ico.headers.get('content-type') ?? '', /icon/);
+  });
+});
+
+describe('box photos', () => {
+  async function readyToPhoto(): Promise<any> {
+    let p = await open(ana, 'f2');
+    p = await packUnits(ana, p, [MS002, MS040]);
+    return confirmManualLines(ana, p);
+  }
+
+  test('a new pack defaults to one box and finish stays locked without a photo', async () => {
+    let p = await readyToPhoto();
+    assert.equal(p.boxCount, 1);
+    assert.equal(p.photosReady, false);
+    assert.equal(p.canComplete, true);
+    assert.equal(p.canFinish, false);
+    const blocked = await act(ana, p, 'complete');
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.json.error.code, 'photos_required');
+    assert.match(blocked.json.error.message, /scatola aperta/);
+    assert.doesNotMatch(blocked.json.error.message, /ne mancano/);
+    assert.equal(p.status, 'active');
+  });
+
+  test('a single-box order (the default) finishes after one photo of the open box', async () => {
+    let p = await readyToPhoto();
+    assert.equal(p.photos.length, 0);
+    p = await addPhoto(ana, p, 1);
+    assert.equal(p.photosReady, true);
+    assert.equal(p.canFinish, true);
+    assert.equal(p.photos.length, 1);
+    assert.equal(p.photos[0].boxIndex, 1);
+    p = (await act(ana, p, 'complete')).json;
+    assert.equal(p.status, 'completed');
+    assert.equal(p.photos.length, 1);
+    const [o] = (await call(ana, 'GET', '/v1/packed')).json.orders;
+    assert.equal(o.boxCount, 1);
+    assert.equal(o.photos.length, 1);
+    assert.equal(o.photos[0].boxIndex, 1);
+    const img = await app.request(`/v1/packs/${p.id}/photos/1`, { headers: { authorization: `Bearer ${ben}` } });
+    assert.equal(img.status, 200);
+    assert.match(img.headers.get('content-type') ?? '', /image\/jpeg/);
+    const bytes = Buffer.from(await img.arrayBuffer());
+    assert.equal(bytes[0], 0xff);
+    assert.equal(bytes[1], 0xd8);
+  });
+
+  test('a multi-box order needs one photo per selected box', async () => {
+    let p = await readyToPhoto();
+    p = await setBoxes(ana, p, 3);
+    assert.equal(p.boxCount, 3);
+    p = await addPhoto(ana, p, 1);
+    assert.equal(p.photosReady, false);
+    assert.equal((await act(ana, p, 'complete')).json.error.code, 'photos_required');
+    p = await addPhoto(ana, p, 2);
+    assert.equal(p.photosReady, false);
+    assert.equal((await act(ana, p, 'complete')).json.error.code, 'photos_required');
+    p = await addPhoto(ana, p, 3);
+    assert.equal(p.photosReady, true);
+    p = (await act(ana, p, 'complete')).json;
+    assert.equal(p.status, 'completed');
+    assert.deepEqual(p.photos.map((x: any) => x.boxIndex), [1, 2, 3]);
+    const [o] = (await call(ana, 'GET', '/v1/admin/completed')).json.orders;
+    assert.equal(o.boxCount, 3);
+    assert.equal(o.photos.length, 3);
+  });
+
+  test('retaking a photo replaces it, and extra boxes can be dropped', async () => {
+    let p = await readyToPhoto();
+    p = await setBoxes(ana, p, 2);
+    p = await addPhoto(ana, p, 1);
+    p = await addPhoto(ana, p, 2);
+    const firstTaken = p.photos.find((x: any) => x.boxIndex === 1).takenAt;
+    clock += 1000;
+    p = await addPhoto(ana, p, 1);
+    assert.equal(p.photos.length, 2);
+    assert.ok(p.photos.find((x: any) => x.boxIndex === 1).takenAt > firstTaken);
+    p = await setBoxes(ana, p, 1);
+    assert.equal(p.boxCount, 1);
+    assert.equal(p.photos.length, 1);
+    assert.equal(p.photos[0].boxIndex, 1);
+    assert.equal(p.photosReady, true);
+    const gone = await app.request(`/v1/packs/${p.id}/photos/2`, { headers: { authorization: `Bearer ${ana}` } });
+    assert.equal(gone.status, 404);
+  });
+
+  test('photos need the same operator session as the rest of the app', async () => {
+    let p = await readyToPhoto();
+    p = await addPhoto(ana, p, 1);
+    assert.equal((await call(null, 'POST', `/v1/packs/${p.id}/photos`, { boxIndex: 1, image: JPEG.toString('base64'), actionId: randomUUID(), version: p.version })).status, 401);
+    assert.equal((await app.request(`/v1/packs/${p.id}/photos/1`)).status, 401);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const bad = await call(ana, 'POST', `/v1/packs/${p.id}/photos`, { boxIndex: 1, image: png.toString('base64'), actionId: randomUUID(), version: p.version });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.json.error.code, 'bad_photo');
+    const outsider = await call(ben, 'POST', `/v1/packs/${p.id}/photos`, { boxIndex: 1, image: JPEG.toString('base64'), actionId: randomUUID(), version: p.version });
+    assert.equal(outsider.status, 403);
   });
 });

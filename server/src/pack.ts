@@ -17,6 +17,9 @@ export const ORDER_MAX_AGE_MS = 5 * 60_000;
 export const CATALOG_MAX_AGE_MS = 24 * 60 * 60_000;
 export const SCAN_OFFER_MS = 90_000;
 export const LIMITS_NOTE = 'Questo codice identifica il tipo di prodotto, non il singolo pezzo.';
+export const MIN_BOXES = 1;
+export const MAX_BOXES = 10;
+export const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
 function productLabel(codice: string | null | undefined, name: string | null | undefined, fallback = 'questo prodotto'): string {
   if (codice && name) return `${name} (${codice})`;
@@ -41,7 +44,9 @@ interface OrderRow {
 interface PackRow {
   id: string; source: string; order_id: string; status: string; owner_user_id: number; version: number;
   accepted_lines: string; created_at: number; updated_at: number; completed_at: number | null; completed_by: number | null;
+  box_count: number;
 }
+export interface PackPhotoView { boxIndex: number; takenAt: number }
 interface UnitRow { id: string; line_id: string; codice: string; barcode: string; status: string; confirmed_by: number; confirmed_at: number }
 interface DiscrepancyRow { id: string; kind: string; barcode: string | null; codice: string | null; title: string; detail: string; read_count: number; created_at: number }
 interface ScanRow { id: string; pack_id: string; barcode: string; outcome: string; line_id: string | null; user_id: number; expires_at: number | null; consumed_at: number | null }
@@ -86,6 +91,13 @@ export interface PackView {
   partial: boolean;
   /** Counted units exist but the order can never be completed, so the packer may empty the box and leave. */
   canEmptyAndLeave: boolean;
+  /** How many boxes this order uses. Chosen during the final packing step, default 1. */
+  boxCount: number;
+  photos: PackPhotoView[];
+  /** One photo exists for each chosen box. */
+  photosReady: boolean;
+  /** Lines are accounted for and every box has its photo. */
+  canFinish: boolean;
 }
 
 function getOrder(db: DatabaseSync, source: string, orderId: string): OrderRow {
@@ -166,6 +178,30 @@ function freshness(ctx: Ctx, order: OrderRow): PackView['freshness'] {
   return { state: 'current', pulledAt: order.pulled_at, message: null };
 }
 
+function photoList(db: DatabaseSync, packId: string): PackPhotoView[] {
+  const rows = db.prepare('SELECT box_index AS boxIndex, created_at AS takenAt FROM pack_photos WHERE pack_id = ? ORDER BY box_index').all(packId) as unknown as { boxIndex: number; takenAt: number }[];
+  return rows.map((p) => ({ boxIndex: p.boxIndex, takenAt: p.takenAt }));
+}
+
+function boxCountOf(pack: PackRow): number {
+  const n = pack.box_count ?? MIN_BOXES;
+  return Number.isInteger(n) && n >= MIN_BOXES ? n : MIN_BOXES;
+}
+
+export function photosReady(boxCount: number, photos: PackPhotoView[]): boolean {
+  const have = new Set(photos.map((p) => p.boxIndex));
+  for (let i = 1; i <= boxCount; i++) if (!have.has(i)) return false;
+  return boxCount >= MIN_BOXES;
+}
+
+function clearPhotos(ctx: Ctx, packId: string): void {
+  ctx.db.prepare('DELETE FROM pack_photos WHERE pack_id = ?').run(packId);
+}
+
+function trimPhotos(ctx: Ctx, packId: string, boxCount: number): void {
+  ctx.db.prepare('DELETE FROM pack_photos WHERE pack_id = ? AND box_index > ?').run(packId, boxCount);
+}
+
 function catalogProblem(ctx: Ctx): string | null {
   const row = ctx.db.prepare(`SELECT last_success_at FROM source_status WHERE source = ?`).get(PRODUCTS_STATUS) as { last_success_at: number | null } | undefined;
   if (!row?.last_success_at) return 'Elenco prodotti non ancora letto. Aggiorna.';
@@ -230,18 +266,23 @@ export function buildView(ctx: Ctx, pack: PackRow, user: User): PackView {
   const hasRecordedCount = units.length > 0;
   const isOwner = pack.owner_user_id === user.id;
   const cannotFinish = !order.eligible || lines.some((l) => l.state === 'blocked');
+  const boxCount = boxCountOf(pack);
+  const photos = photoList(db, pack.id);
+  const readyPhotos = photosReady(boxCount, photos);
+  const canComplete = blockers.length === 0 && pack.status === 'active' && isOwner;
   return {
     id: pack.id, source: pack.source, orderId: pack.order_id, reference: order.reference, recipient: order.recipient,
     status: pack.status, version: pack.version, isOwner, ownerName: userName(db, pack.owner_user_id),
     fixture: ctx.sources.fixture, eligible: Boolean(order.eligible), ineligibleReason: order.ineligible_reason, freshness: fresh,
     lines, nonPhysical: JSON.parse(order.non_physical) as NonPhysicalRow[],
     discrepancies: open.map((d) => ({ id: d.id, kind: d.kind, barcode: d.barcode, codice: d.codice, title: d.title, detail: d.detail, readCount: d.read_count, resolutions: RESOLUTIONS[d.kind] ?? [] })),
-    changes, blockers, canComplete: blockers.length === 0 && pack.status === 'active' && isOwner,
+    changes, blockers, canComplete,
     completedAt: pack.completed_at, completedByName: pack.completed_by ? userName(db, pack.completed_by) : null,
     changedAfterCompletion: pack.status === 'completed' && (changes.length > 0 || !order.eligible), limitsNote: LIMITS_NOTE,
     hasRecordedCount, canLeave: pack.status === 'active' && isOwner && !hasRecordedCount,
     partial: lines.some((l) => l.short > 0),
     canEmptyAndLeave: pack.status === 'active' && isOwner && hasRecordedCount && cannotFinish,
+    boxCount, photos, photosReady: readyPhotos, canFinish: canComplete && readyPhotos,
   };
 }
 
@@ -564,10 +605,69 @@ export function takeOver(ctx: Ctx, user: User, packId: string, actionId: string,
   });
 }
 
+function decodeJpeg(image: string): Buffer {
+  const raw = image.includes(',') ? image.slice(image.indexOf(',') + 1) : image;
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(raw, 'base64');
+  } catch {
+    throw new ApiError(400, 'bad_photo', 'La foto non è valida. Scattala di nuovo.');
+  }
+  if (bytes.length < 24 || bytes.length > MAX_PHOTO_BYTES) {
+    throw new ApiError(400, 'bad_photo', 'La foto non è valida. Scattala di nuovo.');
+  }
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+    throw new ApiError(400, 'bad_photo', 'Scatta una foto dei prodotti nella scatola aperta.');
+  }
+  return bytes;
+}
+
+/** How many boxes this order uses. Default is 1; extra photos above the new count are dropped. */
+export function setBoxCount(ctx: Ctx, user: User, packId: string, boxCount: number, actionId: string, version: number): PackView {
+  return idempotent(ctx, actionId, packId, () => {
+    const { pack, view } = guardWrite(ctx, packId, user, version);
+    if (!Number.isInteger(boxCount) || boxCount < MIN_BOXES || boxCount > MAX_BOXES) {
+      throw new ApiError(400, 'bad_box_count', `Scegli da ${MIN_BOXES} a ${MAX_BOXES} scatole.`, { pack: view });
+    }
+    ctx.db.prepare('UPDATE packs SET box_count = ? WHERE id = ?').run(boxCount, pack.id);
+    trimPhotos(ctx, pack.id, boxCount);
+    logEvent(ctx, pack.id, 'box_count', user.id, { boxCount });
+    bump(ctx, pack.id);
+    return viewPack(ctx, pack.id, user);
+  });
+}
+
+/** Stores or replaces the JPEG for one box. The photo must show the open box with the products inside. */
+export function savePhoto(ctx: Ctx, user: User, packId: string, boxIndex: number, image: string, actionId: string, version: number): PackView {
+  return idempotent(ctx, actionId, packId, () => {
+    const { pack, view } = guardWrite(ctx, packId, user, version);
+    if (!Number.isInteger(boxIndex) || boxIndex < 1 || boxIndex > boxCountOf(pack)) {
+      throw new ApiError(400, 'bad_box', 'Questa scatola non è in questo ordine.', { pack: view });
+    }
+    const bytes = decodeJpeg(typeof image === 'string' ? image : '');
+    ctx.db.prepare(`INSERT INTO pack_photos (pack_id, box_index, mime, bytes, created_at) VALUES (?,?,?,?,?)
+      ON CONFLICT (pack_id, box_index) DO UPDATE SET mime = excluded.mime, bytes = excluded.bytes, created_at = excluded.created_at`)
+      .run(pack.id, boxIndex, 'image/jpeg', bytes, ctx.now());
+    logEvent(ctx, pack.id, 'photo', user.id, { boxIndex });
+    bump(ctx, pack.id);
+    return viewPack(ctx, pack.id, user);
+  });
+}
+
+export function readPhoto(ctx: Ctx, packId: string, boxIndex: number): { mime: string; bytes: Buffer } {
+  getPack(ctx.db, packId);
+  const n = Number(boxIndex);
+  if (!Number.isInteger(n) || n < 1) throw new ApiError(400, 'bad_box', 'Questa scatola non è in questo ordine.');
+  const row = ctx.db.prepare('SELECT mime, bytes FROM pack_photos WHERE pack_id = ? AND box_index = ?').get(packId, n) as { mime: string; bytes: Uint8Array | Buffer } | undefined;
+  if (!row) throw new ApiError(404, 'photo_not_found', 'Questa foto non c\'è.');
+  return { mime: row.mime, bytes: Buffer.from(row.bytes) };
+}
+
 export function complete(ctx: Ctx, user: User, packId: string, actionId: string, version: number): PackView {
   return idempotent(ctx, actionId, packId, () => {
     const { pack, view } = guardWrite(ctx, packId, user, version);
     if (view.blockers.length > 0) throw new ApiError(409, 'completion_blocked', 'Ordine non ancora completo.', { pack: view });
+    if (!view.photosReady) throw new ApiError(409, 'photos_required', 'Prima fotografa ogni scatola aperta.', { pack: view });
     ctx.db.prepare(`UPDATE packs SET status = 'completed', completed_at = ?, completed_by = ? WHERE id = ?`).run(ctx.now(), user.id, pack.id);
     logEvent(ctx, pack.id, 'completed', user.id);
     bump(ctx, pack.id);
@@ -597,6 +697,8 @@ export function restart(ctx: Ctx, user: User, packId: string, actionId: string, 
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'restarted' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'restarted', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare('DELETE FROM shortages WHERE pack_id = ?').run(pack.id);
+    clearPhotos(ctx, pack.id);
+    ctx.db.prepare('UPDATE packs SET box_count = ? WHERE id = ?').run(MIN_BOXES, pack.id);
     logEvent(ctx, pack.id, 'restarted', user.id);
     bump(ctx, pack.id);
     return viewPack(ctx, pack.id, user);
@@ -614,7 +716,8 @@ export function release(ctx: Ctx, user: User, packId: string, actionId: string, 
     ctx.db.prepare(`UPDATE units SET status = 'removed', removed_by = ?, removed_at = ?, removal_reason = 'box_emptied' WHERE pack_id = ? AND status != 'removed'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare(`UPDATE discrepancies SET status = 'resolved', resolution = 'box_emptied', resolved_by = ?, resolved_at = ? WHERE pack_id = ? AND status = 'open'`).run(user.id, ctx.now(), pack.id);
     ctx.db.prepare('DELETE FROM shortages WHERE pack_id = ?').run(pack.id);
-    ctx.db.prepare(`UPDATE packs SET status = 'released' WHERE id = ?`).run(pack.id);
+    clearPhotos(ctx, pack.id);
+    ctx.db.prepare(`UPDATE packs SET status = 'released', box_count = ? WHERE id = ?`).run(MIN_BOXES, pack.id);
     logEvent(ctx, pack.id, 'released', user.id);
     bump(ctx, pack.id);
     return { released: true as const };
@@ -661,6 +764,9 @@ export interface CompletedOrder {
   manualUnits: number;
   /** Pieces marked out of stock: shipped later, by people, outside Packy. 0 means a complete order. */
   shortUnits: number;
+  packId: string;
+  boxCount: number;
+  photos: PackPhotoView[];
 }
 
 /** Read-only activity feed for the web dashboard: orders packed in the last `days` days, newest first. */
@@ -668,21 +774,22 @@ export function completedOrders(ctx: Ctx, days = 30, limit = 500): { fixture: bo
   const since = ctx.now() - days * 24 * 60 * 60_000;
   const rows = ctx.db.prepare(`
     SELECT p.completed_at AS completedAt, p.source AS source, COALESCE(o.reference, p.order_id) AS reference, o.recipient AS recipient,
-      u.display_name AS completedByName, p.id AS packId, p.accepted_lines AS acceptedLines
+      u.display_name AS completedByName, p.id AS packId, p.accepted_lines AS acceptedLines, p.box_count AS boxCount
     FROM packs p
     JOIN users u ON u.id = p.completed_by
     LEFT JOIN orders o ON o.source = p.source AND o.order_id = p.order_id
     WHERE p.status = 'completed' AND p.completed_at >= ?
-    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as (Omit<CompletedOrder, 'units' | 'manualUnits' | 'shortUnits'> & { packId: string; acceptedLines: string })[];
+    ORDER BY p.completed_at DESC LIMIT ?`).all(since, limit) as unknown as (Omit<CompletedOrder, 'units' | 'manualUnits' | 'shortUnits' | 'photos'> & { packId: string; acceptedLines: string; boxCount: number })[];
   const unitsOf = ctx.db.prepare(`SELECT line_id AS lineId, barcode FROM units WHERE pack_id = ? AND status != 'removed'`);
   const shortOf = ctx.db.prepare('SELECT COALESCE(SUM(quantity), 0) AS n FROM shortages WHERE pack_id = ?');
   const total = (ctx.db.prepare(`SELECT COUNT(*) AS n FROM packs WHERE status = 'completed'`).get() as { n: number }).n;
-  const orders = rows.map(({ packId, acceptedLines, ...r }) => {
+  const orders = rows.map(({ packId, acceptedLines, boxCount, ...r }) => {
     // Pieces only: shipping rows are confirmed by hand but are not in the box.
     const shippingIds = new Set((JSON.parse(acceptedLines) as SourceLine[]).filter((l) => l.shipping).map((l) => l.lineId));
     const pieces = (unitsOf.all(packId) as { lineId: string; barcode: string }[]).filter((u) => !shippingIds.has(u.lineId));
     const shortUnits = (shortOf.get(packId) as { n: number }).n;
-    return { ...r, units: pieces.length, manualUnits: pieces.filter((u) => u.barcode === '').length, shortUnits };
+    const photos = photoList(ctx.db, packId);
+    return { ...r, packId, boxCount: boxCount ?? MIN_BOXES, units: pieces.length, manualUnits: pieces.filter((u) => u.barcode === '').length, shortUnits, photos };
   });
   return { fixture: ctx.sources.fixture, since, total, orders };
 }
